@@ -131,7 +131,7 @@
     <h1>
       <ul>
       $for(posts)$
-      <li>$posts.datetime$ - $posts.title$</li>
+      <li><a href="/$posts.slug$.html">$posts.date$ - $posts.title$</a></li>
       $endfor$
       </ul>
     </h1>

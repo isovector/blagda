@@ -87,16 +87,19 @@ agdaHTML = do
 
 
 data Article = Article
-  { a_title    :: Text
+  { a_slug     :: Text
+  , a_title    :: Text
   , a_datetime :: UTCTime
   , a_meta     :: Meta
   }
   deriving (Eq, Ord, Show)
 
 instance ToContext Text Article where
-  toVal (Article title date meta) = MapVal $ Context $ Map.fromList
-    [ ("title", toVal title)
-    , ("datetime", toVal $ Text.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%i" date)
+  toVal (Article slug title date meta) = MapVal $ Context $ Map.fromList
+    [ ("slug", toVal slug)
+    , ("title", toVal title)
+    , ("datetime", toVal $ Text.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%M" date)
+    , ("date", toVal $ Text.pack $ formatTime defaultTimeLocale "%Y-%m-%d" date)
     ]
 
 parseMetaString :: MetaValue -> Maybe Text
@@ -104,10 +107,11 @@ parseMetaString (MetaString txt) = Just txt
 parseMetaString (MetaInlines (Strs txt)) = Just txt
 parseMetaString _ = Nothing
 
-parseHeader :: Meta -> Maybe Article
-parseHeader meta@(Meta m) =
+parseHeader :: Text -> Meta -> Maybe Article
+parseHeader slug meta@(Meta m) =
   Article
-    <$> (parseMetaString =<< Map.lookup "title" m)
+    <$> pure slug
+    <*> (parseMetaString =<< Map.lookup "title" m)
     <*> ( parseTimeM True defaultTimeLocale "%Y-%m-%d %H:%M"
             . Text.unpack =<< parseMetaString
                           =<< Map.lookup "date" m)

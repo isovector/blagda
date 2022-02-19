@@ -63,7 +63,7 @@ main =
     forP (fmap ("site" </>) md_files <> md0) $ \input -> do
       md@(Pandoc meta _) <- loadMarkdown commit input
       writeTemplate "support/web/template.html" mempty md $ getHtml1Path input
-      pure $ parseHeader meta
+      pure $ parseHeader (Text.pack $ dropExtension $ takeFileName input) meta
 
   let posts = reverse $ sortOn a_datetime $ catMaybes articles
 
