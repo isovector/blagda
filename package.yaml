@@ -38,6 +38,9 @@ dependencies:
 - text
 - uri-encode
 
+ghc-options:
+  - -Wall
+
 library:
   source-dirs: src
 
@@ -45,6 +48,8 @@ executables:
   blagda:
     main:                Main.hs
     source-dirs:         app
+    dependencies:
+    - blagda
     ghc-options:
     - -threaded
     - -rtsopts
