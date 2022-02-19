@@ -253,8 +253,8 @@ main =
 
   commit <- gitCommit
 
-  md0   <- sort . fmap ("_build/html0" </>) <$> getDirectoryFiles "_build/html0" ["**/*.md"]
-  html0 <- sort . fmap ("_build/html0" </>) <$> getDirectoryFiles "_build/html0" ["**/*.html"]
+  md0   <- sort . fmap ("_build/html0" </>) <$> getDirectoryFiles "_build/html0" ["*.md"]
+  html0 <- sort . fmap ("_build/html0" </>) <$> getDirectoryFiles "_build/html0" ["*.html"]
 
   let getBuildPath path ext x = "_build" </> path </> (dropExtension $ takeFileName x) <.> ext
       getHtml1Path = getBuildPath "html1" "html"
@@ -267,7 +267,7 @@ main =
   void $ forP html0 $ \html ->
     liftIO $ Dir.copyFile html $ getHtml1Path html
 
-  html1 <- sort . fmap ("_build/html1" </>) <$> getDirectoryFiles "_build/html1" ["**/*.html"]
+  html1 <- sort . fmap ("_build/html1" </>) <$> getDirectoryFiles "_build/html1" ["*.html"]
 
   void $ forP html1 $ \input -> do
     let out = getHtmlPath input
@@ -277,70 +277,20 @@ main =
     traverse_ (checkMarkup (takeFileName out)) tags
     liftIO $ Text.writeFile out $ renderHTML5 tags
 
-  -- "_build/html/*.svg" %> \out -> do
-  --   let inp = "_build/diagrams" </> takeFileName out -<.> "tex"
-  --   need [inp]
-  --   command_ [Traced "build-diagram"] "sh"
-  --     ["support/build-diagram.sh", out, inp]
-  --   removeFilesAfter "." ["rubtmp*"]
+  diagrams <- fmap ("_build/diagrams" </>) <$> getDirectoryFiles "_build/diagrams" ["*.tex"]
+  void $ forP diagrams $ \input -> do
+    cacheAction input $
+      command_ [Traced "build-diagram"] "sh" ["support/build-diagram.sh", getBuildPath "html" "svg" input, input]
 
-  -- "_build/html/css/*.css" %> \out -> do
-  --   let inp = "support/web/" </> takeFileName out -<.> "scss"
-  --   need [inp]
-  --   command_ [] "sassc" [inp, out]
+  sass <- getDirectoryFiles "" ["support/web/*.scss"]
+  void $ forP sass $ \input ->
+    cacheAction input $
+      command_ [] "sass" [input, getBuildPath "html/css" "css" input]
 
-  -- "_build/html/favicon.ico" %> \out -> do
-  --   need ["support/favicon.ico"]
-  --   copyFile' "support/favicon.ico" out
+  statics <- getDirectoryFiles "support/static" ["**/*"]
+  void $ forP statics $ \filepath ->
+    copyFileChanged ("support/static" </> filepath) ("_build/html" </> filepath)
 
-  -- "_build/html/static/**/*" %> \out -> do
-  --   let inp = "support/" </> dropDirectory1 (dropDirectory1 out)
-  --   need [inp]
-  --   traced "copying" $ Dir.copyFile inp out
-
-  -- "_build/html/*.js" %> \out -> do
-  --   let inp = "support/web" </> takeFileName out
-  --   need [inp]
-  --   traced "copying" $ Dir.copyFile inp out
-
-  -- versioned 3 $ phony "all" do
-  --   need ["_build/all-pages.agda"]
-  --   need ["_build/all-posts.md"]
-  --   files <- filter ("open import" `isPrefixOf`) . lines <$> readFile' "_build/all-pages.agda"
-  --   posts <- fmap lines $ readFile' "_build/all-posts.md"
-  --   need $ "_build/html/all-pages.html"
-  --        : [ "_build/html" </> (words file !! 2) <.> "html"
-  --          | file <- files
-  --          ]
-  --   need $ [ "_build/html" </> file <.> "html"
-  --          | file <- posts
-  --          ]
-
-  --   f1 <- getDirectoryFiles "support" ["**/*.scss"] >>= \files -> pure ["_build/html/css/" </> takeFileName f -<.> "css" | f <- files]
-  --   f2 <- getDirectoryFiles "support" ["**/*.js"] >>= \files -> pure ["_build/html/" </> takeFileName f | f <- files]
-  --   f3 <- getDirectoryFiles "support/static/" ["**/*"] >>= \files ->
-  --     pure ["_build/html/static" </> f | f <- files]
-  --   f4 <- getDirectoryFiles "_build/html0" ["Agda.*.html"] >>= \files ->
-  --     pure ["_build/html/" </> f | f <- files]
-  --   need $ "_build/html/favicon.ico":(f1 ++ f2 ++ f3 ++ f4)
-
-  -- phony "clean" do
-  --   removeFilesAfter "_build" ["html0/*", "html/*", "diagrams/*", "*.agda", "*.md", "*.html"]
-
-  -- phony "really-clean" do
-  --   need ["clean"]
-  --   removeFilesAfter "_build" ["**/*.agdai", "*.lua"]
-
-  -- versioned 1 do
-  --   _ <- addOracleCache \(LatexEquation (display, tex)) -> do
-  --     need [".macros"]
-
-  --     let args = ["-f", ".macros", "-t"] ++ ["-d" | display]
-  --         stdin = LazyBS.fromStrict $ Text.encodeUtf8 tex
-  --     Stdout out <- command [StdinBS stdin] "katex" args
-  --     pure . Text.stripEnd . Text.decodeUtf8 $ out
-
-  --   pure ()
 
 -- | Possibly interpret an <a href="agda://"> link to be a honest-to-god
 -- link to the definition.
@@ -382,6 +332,13 @@ addLinkType fileIds fileTys tag@(TagOpen "a" attrs)
     where
       resolveId mod href (_, ids) types = Map.lookup href types
 addLinkType _ _ x = pure x
+
+checkMarkup :: FilePath -> Tag Text -> Action ()
+checkMarkup file (TagText txt)
+  |  "<!--" `Text.isInfixOf` txt || "<!–" `Text.isInfixOf` txt
+  || "-->" `Text.isInfixOf` txt  || "–>" `Text.isInfixOf` txt
+  = fail $ "[WARN] " ++ file ++ " contains misplaced <!-- or -->"
+checkMarkup _ _ = pure ()
 
 
 -- | Parse an Agda module (in the final build directory) to find a list
