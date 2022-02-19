@@ -1,25 +1,8 @@
-#!/usr/bin/env stack
-{- stack --resolver lts-18.18 script
-         --package aeson
-         --package Agda
-         --package bytestring
-         --package containers
-         --package directory
-         --package doctemplates
-         --package mtl
-         --package pandoc
-         --package pandoc-types
-         --package process
-         --package SHA
-         --package shake
-         --package syb
-         --package tagsoup
-         --package text
-         --package uri-encode
--}
 {-# LANGUAGE BlockArguments, OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving, TypeFamilies, FlexibleContexts #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TypeApplications #-}
+
 module Main (main) where
 
 import Control.Monad.IO.Class
@@ -55,7 +38,6 @@ import Network.URI.Encode (decodeText)
 import qualified System.Directory as Dir
 import System.IO.Unsafe
 import System.Console.GetOpt
-import System.Process (callCommand)
 import System.IO
 
 import Text.HTML.TagSoup
@@ -87,6 +69,8 @@ import Agda.Utils.FileName
 import Agda.Syntax.Common
 import Agda.Utils.Pretty
 import Agda.Syntax.Info
+import Development.Shake.Forward (shakeArgsForward, forwardOptions, cache, cacheAction)
+import System.Directory (createDirectoryIfMissing)
 
 newtype LatexEquation = LatexEquation (Bool, Text) -- TODO: Less lazy instance
   deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
@@ -102,32 +86,38 @@ data Reference
 moduleName :: FilePath -> String
 moduleName = intercalate "." . splitDirectories
 
-findModule :: MonadIO m => String -> m FilePath
+data AgdaOrMarkdown
+  = Agda { aom_fp :: FilePath }
+  | Markdown { aom_fp :: FilePath }
+
+findModule :: MonadIO m => String -> m AgdaOrMarkdown
 findModule modname = do
   let toPath '.' = '/'
       toPath c = c
   let modfile = "src" </> map toPath modname
 
-  exists <- liftIO $ Dir.doesFileExist (modfile <.> "lagda.md")
-  pure $ if exists
-    then modfile <.> "lagda.md"
-    else modfile <.> "agda"
+  is_lagda <- liftIO $ Dir.doesFileExist (modfile <.> "lagda.md")
+  is_agda <- liftIO $ Dir.doesFileExist (modfile <.> "agda")
+  is_md <- liftIO $ Dir.doesFileExist (modfile <.> "md")
+  pure $
+    case (is_lagda, is_agda, is_md) of
+      (True, _, _) -> Agda $ modfile <.> "lagda.md"
+      (_, True, _) -> Agda $ modfile <.> "agda"
+      (_, _, True) -> Markdown $ modfile <.> "md"
+      _ -> error $ "File must be one of .lagda.md, .agda, or .md" <> modname
 
-buildMarkdown :: String
-              -> (FilePath -> Action [Text])
-              -> (Text -> Action (Map Text Reference, Map Text Text))
-              -> FilePath -> FilePath -> Action ()
-buildMarkdown gitCommit gitAuthors moduleIds input output = do
+buildMarkdown :: String -> FilePath -> FilePath -> Action FilePath
+buildMarkdown gitCommit input output = do
   let
     templateName = "support/web/template.html"
     modname = moduleName (dropDirectory1 (dropDirectory1 (dropExtension input)))
 
-  need [templateName, input]
+  -- need [templateName, input]
 
-  modulePath <- findModule modname
-  authors <- gitAuthors modulePath
+  -- modulePath <- fmap aom_fp $ findModule modname
   let
-    permalink = gitCommit </> modulePath
+    -- TODO(sandy):
+    permalink = gitCommit </> mempty
 
     title
       | length modname > 24 = '…':reverse (take 24 (reverse modname))
@@ -137,7 +127,8 @@ buildMarkdown gitCommit gitAuthors moduleIds input output = do
     contents <- Text.readFile input
     either (fail . show) pure =<< runIO do
       md <- readMarkdown def { readerExtensions = getDefaultExtensions "markdown" } [(input, contents)]
-      applyFilters def [JSONFilter "agda-reference-filter"] ["html"] md
+      pure md
+      -- applyFilters def [JSONFilter "agda-reference-filter"] ["html"] md
 
   let
     htmlInl = RawInline (Format "html")
@@ -169,8 +160,8 @@ buildMarkdown gitCommit gitAuthors moduleIds input output = do
         ]
     patchBlock h = pure h
 
-    patchInline (Math DisplayMath contents) = htmlInl <$> askOracle (LatexEquation (True, contents))
-    patchInline (Math InlineMath contents) = htmlInl <$> askOracle (LatexEquation (False, contents))
+    patchInline (Math DisplayMath contents) = htmlInl <$> buildLatexEqn True contents
+    patchInline (Math InlineMath contents) = htmlInl <$> buildLatexEqn False contents
     patchInline h = pure h
 
     mStr = MetaString . Text.pack
@@ -181,20 +172,15 @@ buildMarkdown gitCommit gitAuthors moduleIds input output = do
   markdown <- pure . walk patchInlines . Pandoc (patchMeta meta) $ markdown
   markdown <- walkM patchInline markdown
   (markdown, dependencies) <- runWriterT $ walkM patchBlock markdown
-  need dependencies
+  -- need dependencies
 
   text <- liftIO $ either (fail . show) pure =<< runIO do
     template <- getTemplate templateName >>= runWithPartials . compileTemplate templateName
                 >>= either (throwError . PandocTemplateError . Text.pack) pure
     let
-      authors' = case authors of
-        [] -> "Nobody"
-        [x] -> x
-        _ -> Text.intercalate ", " (init authors) `Text.append` " and " `Text.append` last authors
-
       context = Context $ Map.fromList
                 [ (Text.pack "is-index", toVal (modname == "index"))
-                , (Text.pack "authors", toVal authors')
+                -- , (Text.pack "authors", toVal authors')
                 ]
       options = def { writerTemplate = Just template
                     , writerTableOfContents = True
@@ -202,126 +188,159 @@ buildMarkdown gitCommit gitAuthors moduleIds input output = do
                     , writerExtensions = getDefaultExtensions "html" }
     writeHtml5String options markdown
 
-  tags <- traverse (parseAgdaLink moduleIds) (parseTags text)
-  liftIO $ Text.writeFile output (renderHTML5 tags)
+  -- TODO(sandy): dont use mempty
+  -- tags <- traverse (parseAgdaLink $ const $ pure (mempty, mempty)) (parseTags text)
+  liftIO $ Text.writeFile output text -- (renderHTML5 tags)
+  pure output
 
-  command_ [] "agda-fold-equations" [output]
+  -- command_ [] "agda-fold-equations" [output]
+
+
+
+buildLatexEqn :: Bool -> Text -> Action Text
+buildLatexEqn display tex = cacheAction (display, tex) $ do
+  need [".macros"]
+
+  let args = ["-f", ".macros", "-t"] ++ ["-d" | display]
+      stdin = LazyBS.fromStrict $ Text.encodeUtf8 tex
+  Stdout out <- command [StdinBS stdin] "katex" args
+  pure . Text.stripEnd . Text.decodeUtf8 $ out
+
 
 renderHTML5 :: [Tag Text] -> Text
 renderHTML5 = renderTagsOptions renderOptions{ optMinimize = min } where
   min = flip elem ["br", "meta", "link", "img", "hr"]
 
 main :: IO ()
-main = shakeArgs shakeOptions{shakeFiles="_build", shakeChange=ChangeDigest} $ do
-  fileIdMap <- newCache parseFileIdents
-  fileTyMap <- newCache parseFileTypes
-  gitCommit <- newCache gitCommit
-  gitAuthors <- newCache (gitAuthors (gitCommit ()))
+main =
+  shakeArgsForward
+    (forwardOptions $ shakeOptions
+      { shakeFiles="_build"
+      , shakeLintInside=["src"]
+      , shakeChange=ChangeDigest
+      , shakeVersion = "2"
+      }) $ do
 
-  "_build/all-pages.agda" %> \out -> do
-    files <- sort <$> getDirectoryFiles "src" ["**/*.agda", "**/*.lagda.md"]
-    need (map ("src" </>) files)
-    let
-      toOut x | takeExtensions x == ".lagda.md"
-              = moduleName (dropExtensions x) ++ " -- (text page)"
-      toOut x = moduleName (dropExtensions x) ++ " -- (code only)"
+  liftIO $ createDirectoryIfMissing True "_build/html0"
+  liftIO $ createDirectoryIfMissing True "_build/html1"
+  liftIO $ createDirectoryIfMissing True "_build/html"
 
-    writeFileLines out $ "{-# OPTIONS --cubical #-}"
-                       : ["open import " ++ toOut x | x <- files]
-                      ++ ["import " ++ x ++ " -- (builtin)" | x <- builtinModules]
+  agda_files <- sort <$> getDirectoryFiles "src" ["**/*.agda", "**/*.lagda.md"]
+  md_files' <- getDirectoryFiles "src" ["**/*.md"]
+  let md_files = Set.toList $ Set.fromList md_files' Set.\\ Set.fromList agda_files
 
+  let
+    toOut x | takeExtensions x == ".lagda.md"
+            = moduleName (dropExtensions x) ++ " -- (text page)"
+    toOut x = moduleName (dropExtensions x) ++ " -- (code only)"
+
+  -- build the index
+  writeFileLines "_build/all-pages.agda"
+    $ "{-# OPTIONS --cubical #-}"
+      : ["open import " ++ toOut x | x <- agda_files]
+     ++ ["import " ++ x ++ " -- (builtin)" | x <- builtinModules]
+
+  -- get agda html
+  cacheAction @String @() "agda" $
     command [] "agda"
       [ "--html"
       , "--html-dir=_build/html0"
       , "--html-highlight=auto"
       , "--local-interfaces"
       , "--css=/css/agda-cats.css"
-      , out
+      , "_build/all-pages.agda"
       ]
 
-  "_build/html1/*.html" %> \out -> do
-    need ["_build/all-pages.agda"]
+  commit <- gitCommit
 
-    let
-      modname = dropExtension (takeFileName out)
-      input = "_build/html0" </> modname
+  md0   <- sort . fmap ("_build/html0" </>) <$> getDirectoryFiles "_build/html0" ["**/*.md"]
+  html0 <- sort . fmap ("_build/html0" </>) <$> getDirectoryFiles "_build/html0" ["**/*.html"]
 
-    ismd <- liftIO $ Dir.doesFileExist (input <.> ".md")
+  let getBuildPath path ext x = "_build" </> path </> (dropExtension $ takeFileName x) <.> ext
+      getHtml1Path = getBuildPath "html1" "html"
+      getHtmlPath = getBuildPath "html" "html"
 
-    gitCommit <- gitCommit ()
 
-    if ismd
-      then buildMarkdown gitCommit gitAuthors fileIdMap (input <.> ".md") out
-      else liftIO $ Dir.copyFile (input <.> ".html") out
+  md0' <- forP (fmap ("src" </>) md_files <> md0) $ \md ->
+    buildMarkdown commit md $ getHtml1Path md
 
-  "_build/html/*.html" %> \out -> do
-    let input = "_build/html1" </> takeFileName out
-    need [input]
+  void $ forP html0 $ \html ->
+    liftIO $ Dir.copyFile html $ getHtml1Path html
 
+  html1 <- sort . fmap ("_build/html1" </>) <$> getDirectoryFiles "_build/html1" ["**/*.html"]
+
+  void $ forP html1 $ \input -> do
+    let out = getHtmlPath input
     text <- liftIO $ Text.readFile input
-    tags <- traverse (addLinkType fileIdMap fileTyMap) (parseTags text)
+    -- tags <- traverse (addLinkType undefined undefined) (parseTags text)
+    tags <- pure $ parseTags text
     traverse_ (checkMarkup (takeFileName out)) tags
-    liftIO $ Text.writeFile out (renderHTML5 tags)
+    liftIO $ Text.writeFile out $ renderHTML5 tags
 
-  "_build/html/*.svg" %> \out -> do
-    let inp = "_build/diagrams" </> takeFileName out -<.> "tex"
-    need [inp]
-    command_ [Traced "build-diagram"] "sh"
-      ["support/build-diagram.sh", out, inp]
-    removeFilesAfter "." ["rubtmp*"]
+  -- "_build/html/*.svg" %> \out -> do
+  --   let inp = "_build/diagrams" </> takeFileName out -<.> "tex"
+  --   need [inp]
+  --   command_ [Traced "build-diagram"] "sh"
+  --     ["support/build-diagram.sh", out, inp]
+  --   removeFilesAfter "." ["rubtmp*"]
 
-  "_build/html/css/*.css" %> \out -> do
-    let inp = "support/web/" </> takeFileName out -<.> "scss"
-    need [inp]
-    command_ [] "sassc" [inp, out]
+  -- "_build/html/css/*.css" %> \out -> do
+  --   let inp = "support/web/" </> takeFileName out -<.> "scss"
+  --   need [inp]
+  --   command_ [] "sassc" [inp, out]
 
-  "_build/html/favicon.ico" %> \out -> do
-    need ["support/favicon.ico"]
-    copyFile' "support/favicon.ico" out
+  -- "_build/html/favicon.ico" %> \out -> do
+  --   need ["support/favicon.ico"]
+  --   copyFile' "support/favicon.ico" out
 
-  "_build/html/static/**/*" %> \out -> do
-    let inp = "support/" </> dropDirectory1 (dropDirectory1 out)
-    need [inp]
-    traced "copying" $ Dir.copyFile inp out
+  -- "_build/html/static/**/*" %> \out -> do
+  --   let inp = "support/" </> dropDirectory1 (dropDirectory1 out)
+  --   need [inp]
+  --   traced "copying" $ Dir.copyFile inp out
 
-  "_build/html/*.js" %> \out -> do
-    let inp = "support/web" </> takeFileName out
-    need [inp]
-    traced "copying" $ Dir.copyFile inp out
+  -- "_build/html/*.js" %> \out -> do
+  --   let inp = "support/web" </> takeFileName out
+  --   need [inp]
+  --   traced "copying" $ Dir.copyFile inp out
 
-  phony "all" do
-    need ["_build/all-pages.agda"]
-    files <- filter ("open import" `isPrefixOf`) . lines <$> readFile' "_build/all-pages.agda"
-    need $ "_build/html/all-pages.html"
-         : [ "_build/html" </> (words file !! 2) <.> "html"
-           | file <- files
-           ]
+  -- versioned 3 $ phony "all" do
+  --   need ["_build/all-pages.agda"]
+  --   need ["_build/all-posts.md"]
+  --   files <- filter ("open import" `isPrefixOf`) . lines <$> readFile' "_build/all-pages.agda"
+  --   posts <- fmap lines $ readFile' "_build/all-posts.md"
+  --   need $ "_build/html/all-pages.html"
+  --        : [ "_build/html" </> (words file !! 2) <.> "html"
+  --          | file <- files
+  --          ]
+  --   need $ [ "_build/html" </> file <.> "html"
+  --          | file <- posts
+  --          ]
 
-    f1 <- getDirectoryFiles "support" ["**/*.scss"] >>= \files -> pure ["_build/html/css/" </> takeFileName f -<.> "css" | f <- files]
-    f2 <- getDirectoryFiles "support" ["**/*.js"] >>= \files -> pure ["_build/html/" </> takeFileName f | f <- files]
-    f3 <- getDirectoryFiles "support/static/" ["**/*"] >>= \files ->
-      pure ["_build/html/static" </> f | f <- files]
-    f4 <- getDirectoryFiles "_build/html0" ["Agda.*.html"] >>= \files ->
-      pure ["_build/html/" </> f | f <- files]
-    need $ "_build/html/favicon.ico":(f1 ++ f2 ++ f3 ++ f4)
+  --   f1 <- getDirectoryFiles "support" ["**/*.scss"] >>= \files -> pure ["_build/html/css/" </> takeFileName f -<.> "css" | f <- files]
+  --   f2 <- getDirectoryFiles "support" ["**/*.js"] >>= \files -> pure ["_build/html/" </> takeFileName f | f <- files]
+  --   f3 <- getDirectoryFiles "support/static/" ["**/*"] >>= \files ->
+  --     pure ["_build/html/static" </> f | f <- files]
+  --   f4 <- getDirectoryFiles "_build/html0" ["Agda.*.html"] >>= \files ->
+  --     pure ["_build/html/" </> f | f <- files]
+  --   need $ "_build/html/favicon.ico":(f1 ++ f2 ++ f3 ++ f4)
 
-  phony "clean" do
-    removeFilesAfter "_build" ["html0/*", "html/*", "diagrams/*", "*.agda", "*.md", "*.html"]
+  -- phony "clean" do
+  --   removeFilesAfter "_build" ["html0/*", "html/*", "diagrams/*", "*.agda", "*.md", "*.html"]
 
-  phony "really-clean" do
-    need ["clean"]
-    removeFilesAfter "_build" ["**/*.agdai", "*.lua"]
+  -- phony "really-clean" do
+  --   need ["clean"]
+  --   removeFilesAfter "_build" ["**/*.agdai", "*.lua"]
 
-  versioned 1 do
-    _ <- addOracleCache \(LatexEquation (display, tex)) -> do
-      need [".macros"]
+  -- versioned 1 do
+  --   _ <- addOracleCache \(LatexEquation (display, tex)) -> do
+  --     need [".macros"]
 
-      let args = ["-f", ".macros", "-t"] ++ ["-d" | display]
-          stdin = LazyBS.fromStrict $ Text.encodeUtf8 tex
-      Stdout out <- command [StdinBS stdin] "katex" args
-      pure . Text.stripEnd . Text.decodeUtf8 $ out
+  --     let args = ["-f", ".macros", "-t"] ++ ["-d" | display]
+  --         stdin = LazyBS.fromStrict $ Text.encodeUtf8 tex
+  --     Stdout out <- command [StdinBS stdin] "katex" args
+  --     pure . Text.stripEnd . Text.decodeUtf8 $ out
 
-    pure ()
+  --   pure ()
 
 -- | Possibly interpret an <a href="agda://"> link to be a honest-to-god
 -- link to the definition.
@@ -364,13 +383,6 @@ addLinkType fileIds fileTys tag@(TagOpen "a" attrs)
       resolveId mod href (_, ids) types = Map.lookup href types
 addLinkType _ _ x = pure x
 
-checkMarkup :: FilePath -> Tag Text -> Action ()
-checkMarkup file (TagText txt)
-  |  "<!--" `Text.isInfixOf` txt || "<!–" `Text.isInfixOf` txt
-  || "-->" `Text.isInfixOf` txt  || "–>" `Text.isInfixOf` txt
-  = fail $ "[WARN] " ++ file ++ " contains misplaced <!-- or -->"
-checkMarkup _ _ = pure ()
-
 
 -- | Parse an Agda module (in the final build directory) to find a list
 -- of its definitions.
@@ -396,32 +408,10 @@ parseFileIdents mod =
     go fwd rev [] = (fwd, rev)
 
 
-gitCommit :: () -> Action String
-gitCommit () = do
+gitCommit :: Action String
+gitCommit = do
   Stdout t <- command [] "git" ["rev-parse", "--verify", "HEAD"]
   pure (head (lines t))
-
-gitAuthors :: Action String -> FilePath -> Action [Text]
-gitAuthors commit path = do
-  _commit <- commit -- We depend on the commit, but don't actually need it.
-
-  -- Sort authors list and make it unique.
-  Stdout authors <- command [] "git" ["log", "--format=%aN", "--", path]
-  let authorSet = Set.fromList . Text.lines . Text.decodeUtf8 $ authors
-
-  Stdout coauthors <- 
-    command [] "git" ["log", "--format=%(trailers:key=Co-authored-by,valueonly)", "--", path]
-
-  let 
-    coauthorSet = Set.fromList 
-      . map dropEmail 
-      . filter (not . Text.null . Text.strip) 
-      . Text.lines 
-      . Text.decodeUtf8 $ coauthors
-
-    dropEmail = Text.unwords . init . Text.words
-
-  pure . Set.toList $ authorSet <> coauthorSet 
 
 --  Loads our type lookup table into memory
 parseFileTypes :: () -> Action (Map Text Text)
