@@ -27,6 +27,8 @@ library
   exposed-modules:
       Blagda
       Blagda.Agda
+      Blagda.Latex
+      Blagda.Markdown
   other-modules:
       Paths_blagda
   hs-source-dirs:
