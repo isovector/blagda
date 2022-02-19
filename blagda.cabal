@@ -27,8 +27,10 @@ library
   exposed-modules:
       Blagda
       Blagda.Agda
+      Blagda.Diagrams
       Blagda.Latex
       Blagda.Markdown
+      Blagda.Utils
   other-modules:
       Paths_blagda
   hs-source-dirs:
@@ -51,6 +53,7 @@ library
     , syb
     , tagsoup
     , text
+    , time
     , uri-encode
   default-language: Haskell2010
 
@@ -79,5 +82,6 @@ executable blagda
     , syb
     , tagsoup
     , text
+    , time
     , uri-encode
   default-language: Haskell2010

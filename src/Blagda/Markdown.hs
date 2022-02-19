@@ -1,33 +1,30 @@
 {-# LANGUAGE BlockArguments    #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms   #-}
 
 module Blagda.Markdown where
 
 import           Blagda.Agda
 import           Blagda.Latex
+import           Blagda.Utils (pattern Strs)
 import           Control.Monad.Error.Class
 import           Control.Monad.IO.Class
-import           Control.Monad.Writer
 import qualified Data.ByteString.Lazy as LazyBS
 import           Data.Digest.Pure.SHA
-import           Data.Foldable
-import           Data.Generics
-import           Data.List
 import           Data.Map.Lazy (Map)
 import qualified Data.Map.Lazy as Map
 import           Data.Maybe
-import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as Text
+import           Data.Time (UTCTime)
+import           Data.Time.Format (defaultTimeLocale)
+import           Data.Time.Format (parseTimeM)
 import           Development.Shake
-import           Development.Shake.Classes
 import           Development.Shake.FilePath
-import           Development.Shake.Forward (shakeArgsForward, forwardOptions, cacheAction)
 import           Network.URI.Encode (decodeText)
-import           System.Directory (createDirectoryIfMissing)
 import qualified System.Directory as Dir
 import           Text.DocTemplates
 import           Text.HTML.TagSoup
@@ -40,7 +37,29 @@ data Reference
               }
   deriving (Eq, Show)
 
-buildMarkdown :: String -> FilePath -> FilePath -> Action FilePath
+data Article = Article
+  { a_title    :: Text
+  , a_datetime :: UTCTime
+  , a_meta     :: Meta
+  }
+  deriving (Eq, Ord, Show)
+
+parseMetaString :: MetaValue -> Maybe Text
+parseMetaString (MetaString txt) = Just txt
+parseMetaString (MetaInlines (Strs txt)) = Just txt
+parseMetaString _ = Nothing
+
+parseHeader :: Meta -> Maybe Article
+parseHeader meta@(Meta m) =
+  Article
+    <$> (parseMetaString =<< Map.lookup "title" m)
+    <*> (parseTimeM True defaultTimeLocale "%Y-%m-%d %H:%M" . Text.unpack =<< parseMetaString =<< Map.lookup "date" m)
+    <*> pure meta
+
+------------------------------------------------------------------------------
+-- | The return type here is whether or not this markdown file is a BLOG POST.
+-- Even if it isn't, the file still gets generated.
+buildMarkdown :: String -> FilePath -> FilePath -> Action (Maybe Article)
 buildMarkdown commit input output = do
   let
     templateName = "support/web/template.html"
@@ -104,7 +123,7 @@ buildMarkdown commit input output = do
 
   markdown <- pure . walk patchInlines . Pandoc (patchMeta meta) $ markdown
   markdown <- walkM patchInline markdown
-  markdown <- walkM patchBlock markdown
+  markdown@(Pandoc meta _) <- walkM patchBlock markdown
 
   text <- liftIO $ either (fail . show) pure =<< runIO do
     template <- getTemplate templateName >>= runWithPartials . compileTemplate templateName
@@ -123,7 +142,7 @@ buildMarkdown commit input output = do
   -- TODO(sandy): dont use mempty
   -- tags <- traverse (parseAgdaLink $ const $ pure (mempty, mempty)) (parseTags text)
   writeFile' output $ Text.unpack text -- (renderHTML5 tags)
-  pure output
+  pure $ parseHeader meta
 
   -- command_ [] "agda-fold-equations" [output]
 

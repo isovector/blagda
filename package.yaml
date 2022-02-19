@@ -37,6 +37,7 @@ dependencies:
 - tagsoup
 - text
 - uri-encode
+- time
 
 ghc-options:
   - -Wall

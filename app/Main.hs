@@ -5,12 +5,15 @@
 
 module Main (main) where
 
-import           Blagda.Agda
+import           Blagda
+import           Blagda.Diagrams
 import           Blagda.Markdown
+import           Blagda.Utils
 import           Control.Monad.IO.Class
 import           Control.Monad.Writer
 import           Data.Foldable
 import           Data.List
+import           Data.Maybe (catMaybes)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as Text
@@ -20,7 +23,6 @@ import           Development.Shake.FilePath
 import           Development.Shake.Forward (shakeArgsForward, forwardOptions, cacheAction)
 import qualified System.Directory as Dir
 import           Text.HTML.TagSoup
-import Blagda
 
 
 
@@ -49,13 +51,17 @@ main =
   md0   <- sort . fmap ("_build/html0" </>) <$> getDirectoryFiles "_build/html0" ["*.md"]
   html0 <- sort . fmap ("_build/html0" </>) <$> getDirectoryFiles "_build/html0" ["*.html"]
 
-  let getBuildPath path ext x = "_build" </> path </> (dropExtension $ takeFileName x) <.> ext
-      getHtml1Path = getBuildPath "html1" "html"
+  let getHtml1Path = getBuildPath "html1" "html"
       getHtmlPath = getBuildPath "html" "html"
 
 
-  md0' <- forP (fmap ("site" </>) md_files <> md0) $ \md ->
-    buildMarkdown commit md $ getHtml1Path md
+  articles <-
+    forP (fmap ("site" </>) md_files <> md0) $ \md ->
+      buildMarkdown commit md $ getHtml1Path md
+
+  void $ forP (catMaybes articles) $ liftIO . putStrLn . show
+
+  buildDiagrams
 
   void $ forP html0 $ \html ->
     liftIO $ Dir.copyFile html $ getHtml1Path html
@@ -70,10 +76,6 @@ main =
     traverse_ (checkMarkup (takeFileName out)) tags
     writeFile' out $ Text.unpack $  renderHTML5 tags
 
-  diagrams <- fmap ("_build/diagrams" </>) <$> getDirectoryFiles "_build/diagrams" ["*.tex"]
-  void $ forP diagrams $ \input -> do
-    cacheAction input $
-      command_ [Traced "build-diagram"] "sh" ["support/build-diagram.sh", getBuildPath "html" "svg" input, input]
 
   sass <- getDirectoryFiles "" ["support/web/*.scss"]
   void $ forP sass $ \input ->
