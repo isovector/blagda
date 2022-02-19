@@ -86,8 +86,7 @@ buildMarkdown commit input output = do
       let
         digest = showDigest . sha1 . LazyBS.fromStrict $ Text.encodeUtf8 contents
         title = fromMaybe "commutative diagram" (lookup "title" attrs)
-      liftIO $ Text.writeFile ("_build/diagrams" </> digest <.> "tex") contents
-      tell ["_build/html" </> digest <.> "svg"]
+      writeFile' ("_build/diagrams" </> digest <.> "tex") $ Text.unpack contents
 
       pure $ Div ("", ["diagram-container"], [])
         [ Plain [ Image (id, "diagram":classes, attrs) [] (Text.pack (digest <.> "svg"), title) ]
@@ -105,8 +104,7 @@ buildMarkdown commit input output = do
 
   markdown <- pure . walk patchInlines . Pandoc (patchMeta meta) $ markdown
   markdown <- walkM patchInline markdown
-  (markdown, dependencies) <- runWriterT $ walkM patchBlock markdown
-  -- need dependencies
+  markdown <- walkM patchBlock markdown
 
   text <- liftIO $ either (fail . show) pure =<< runIO do
     template <- getTemplate templateName >>= runWithPartials . compileTemplate templateName
@@ -124,7 +122,7 @@ buildMarkdown commit input output = do
 
   -- TODO(sandy): dont use mempty
   -- tags <- traverse (parseAgdaLink $ const $ pure (mempty, mempty)) (parseTags text)
-  liftIO $ Text.writeFile output text -- (renderHTML5 tags)
+  writeFile' output $ Text.unpack text -- (renderHTML5 tags)
   pure output
 
   -- command_ [] "agda-fold-equations" [output]

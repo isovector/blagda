@@ -65,10 +65,10 @@ main =
   void $ forP html1 $ \input -> do
     let out = getHtmlPath input
     text <- liftIO $ Text.readFile input
-    tags <- traverse (addLinkType undefined undefined) (parseTags text)
+    -- tags <- traverse (addLinkType undefined undefined) (parseTags text)
     tags <- pure $ parseTags text
     traverse_ (checkMarkup (takeFileName out)) tags
-    liftIO $ Text.writeFile out $ renderHTML5 tags
+    writeFile' out $ Text.unpack $  renderHTML5 tags
 
   diagrams <- fmap ("_build/diagrams" </>) <$> getDirectoryFiles "_build/diagrams" ["*.tex"]
   void $ forP diagrams $ \input -> do
