@@ -1,39 +1,30 @@
-{-# LANGUAGE BlockArguments    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE TypeApplications      #-}
 
 module Blagda where
 
 import           Blagda.Agda
-import           Blagda.Latex
 import           Blagda.Markdown
-import           Control.Monad.Error.Class
-import           Control.Monad.IO.Class
-import           Control.Monad.Writer
-import qualified Data.ByteString.Lazy as LazyBS
-import           Data.Digest.Pure.SHA
-import           Data.Foldable
-import           Data.Generics
+import           Blagda.Utils (pattern Strs)
 import           Data.List
 import           Data.Map.Lazy (Map)
 import qualified Data.Map.Lazy as Map
-import           Data.Maybe
-import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as Text
-import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as Text
+import           Data.Time (UTCTime)
+import           Data.Time.Format (defaultTimeLocale, formatTime)
+import           Data.Time.Format (parseTimeM)
 import           Development.Shake
-import           Development.Shake.Classes
 import           Development.Shake.FilePath
-import           Development.Shake.Forward (shakeArgsForward, forwardOptions, cacheAction)
-import           Network.URI.Encode (decodeText)
-import           System.Directory (createDirectoryIfMissing)
-import qualified System.Directory as Dir
+import           Development.Shake.Forward (cacheAction)
 import           Text.DocTemplates
 import           Text.HTML.TagSoup
 import           Text.Pandoc
-import           Text.Pandoc.Walk
+
 
 -- | Parse an Agda module (in the final build directory) to find a list
 -- of its definitions.
@@ -93,4 +84,32 @@ agdaHTML = do
       ]
 
   pure agda_files
+
+
+data Article = Article
+  { a_title    :: Text
+  , a_datetime :: UTCTime
+  , a_meta     :: Meta
+  }
+  deriving (Eq, Ord, Show)
+
+instance ToContext Text Article where
+  toVal (Article title date meta) = MapVal $ Context $ Map.fromList
+    [ ("title", toVal title)
+    , ("datetime", toVal $ Text.pack $ formatTime defaultTimeLocale "%Y-%m-%d %H:%i" date)
+    ]
+
+parseMetaString :: MetaValue -> Maybe Text
+parseMetaString (MetaString txt) = Just txt
+parseMetaString (MetaInlines (Strs txt)) = Just txt
+parseMetaString _ = Nothing
+
+parseHeader :: Meta -> Maybe Article
+parseHeader meta@(Meta m) =
+  Article
+    <$> (parseMetaString =<< Map.lookup "title" m)
+    <*> ( parseTimeM True defaultTimeLocale "%Y-%m-%d %H:%M"
+            . Text.unpack =<< parseMetaString
+                          =<< Map.lookup "date" m)
+    <*> pure meta
 

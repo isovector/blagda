@@ -1,13 +1,11 @@
 {-# LANGUAGE BlockArguments    #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms   #-}
 
 module Blagda.Markdown where
 
 import           Blagda.Agda
 import           Blagda.Latex
-import           Blagda.Utils (pattern Strs)
 import           Control.Monad.Error.Class
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy as LazyBS
@@ -19,9 +17,6 @@ import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as Text
-import           Data.Time (UTCTime)
-import           Data.Time.Format (defaultTimeLocale)
-import           Data.Time.Format (parseTimeM)
 import           Development.Shake
 import           Development.Shake.FilePath
 import           Network.URI.Encode (decodeText)
@@ -31,50 +26,23 @@ import           Text.HTML.TagSoup
 import           Text.Pandoc
 import           Text.Pandoc.Walk
 
-data Reference
-  = Reference { refHref :: Text
-              , refClasses :: [Text]
-              }
-  deriving (Eq, Show)
 
-data Article = Article
-  { a_title    :: Text
-  , a_datetime :: UTCTime
-  , a_meta     :: Meta
-  }
-  deriving (Eq, Ord, Show)
-
-parseMetaString :: MetaValue -> Maybe Text
-parseMetaString (MetaString txt) = Just txt
-parseMetaString (MetaInlines (Strs txt)) = Just txt
-parseMetaString _ = Nothing
-
-parseHeader :: Meta -> Maybe Article
-parseHeader meta@(Meta m) =
-  Article
-    <$> (parseMetaString =<< Map.lookup "title" m)
-    <*> (parseTimeM True defaultTimeLocale "%Y-%m-%d %H:%M" . Text.unpack =<< parseMetaString =<< Map.lookup "date" m)
-    <*> pure meta
+data Reference = Reference
+  { refHref :: Text
+  , refClasses :: [Text]
+  } deriving (Eq, Show)
 
 ------------------------------------------------------------------------------
 -- | The return type here is whether or not this markdown file is a BLOG POST.
 -- Even if it isn't, the file still gets generated.
-buildMarkdown :: String -> FilePath -> FilePath -> Action (Maybe Article)
-buildMarkdown commit input output = do
-  let
-    templateName = "support/web/template.html"
-    modname = moduleName (dropDirectory1 (dropDirectory1 (dropExtension input)))
+loadMarkdown :: String -> FilePath -> Action Pandoc
+loadMarkdown commit input = do
+  let modname = moduleName (dropDirectory1 (dropDirectory1 (dropExtension input)))
+      permalink = commit </> input
 
-  -- need [templateName, input]
-
-  -- modulePath <- fmap aom_fp $ findModule modname
-  let
-    -- TODO(sandy):
-    permalink = commit </> mempty
-
-    title
-      | length modname > 24 = '…':reverse (take 24 (reverse modname))
-      | otherwise = modname
+      title
+        | length modname > 24 = '…':reverse (take 24 (reverse modname))
+        | otherwise = modname
 
   Pandoc meta markdown <- liftIO do
     contents <- Text.readFile input
@@ -84,55 +52,71 @@ buildMarkdown commit input output = do
       -- applyFilters def [JSONFilter "agda-reference-filter"] ["html"] md
 
   let
-    htmlInl = RawInline (Format "html")
-
-    -- | Replace any expression $foo$-bar with <span ...>$foo$-bar</span>, so that
-    -- the equation is not split when word wrapping.
-    patchInlines (m@Math{}:s@(Str txt):xs)
-      | not (Text.isPrefixOf " " txt)
-      = htmlInl "<span style=\"white-space: nowrap;\">" : m : s : htmlInl "</span>"
-      : patchInlines xs
-    patchInlines (x:xs) = x:patchInlines xs
-    patchInlines [] = []
-
-    -- Make all headers links, and add an anchor emoji.
-    patchBlock (Header i a@(ident, _, _) inl) = pure $ Header i a
-      $ htmlInl (Text.concat ["<a href=\"#", ident, "\" class=\"header-link\">"])
-      : inl
-      ++ [htmlInl "<span class=\"header-link-emoji\">🔗</span></a>"]
-    -- Replace quiver code blocks with a link to an SVG file, and depend on the SVG file.
-    patchBlock (CodeBlock (id, classes, attrs) contents) | "quiver" `elem` classes = do
-      let
-        digest = showDigest . sha1 . LazyBS.fromStrict $ Text.encodeUtf8 contents
-        title = fromMaybe "commutative diagram" (lookup "title" attrs)
-      writeFile' ("_build/diagrams" </> digest <.> "tex") $ Text.unpack contents
-
-      pure $ Div ("", ["diagram-container"], [])
-        [ Plain [ Image (id, "diagram":classes, attrs) [] (Text.pack (digest <.> "svg"), title) ]
-        ]
-    patchBlock h = pure h
-
-    patchInline (Math DisplayMath contents) = htmlInl <$> buildLatexEqn True contents
-    patchInline (Math InlineMath contents) = htmlInl <$> buildLatexEqn False contents
-    patchInline h = pure h
-
-    mStr = MetaString . Text.pack
-    patchMeta = Meta . Map.insert "title" (mStr title) . Map.insert "source" (mStr permalink) . unMeta
-
   liftIO $ Dir.createDirectoryIfMissing False "_build/diagrams"
 
-  markdown <- pure . walk patchInlines . Pandoc (patchMeta meta) $ markdown
+  markdown <- pure . walk patchInlines . Pandoc (patchMeta title permalink meta) $ markdown
   markdown <- walkM patchInline markdown
-  markdown@(Pandoc meta _) <- walkM patchBlock markdown
+  markdown <- walkM patchBlock markdown
+  pure markdown
 
+
+htmlInl :: Text -> Inline
+htmlInl = RawInline (Format "html")
+
+
+-- | Replace any expression $foo$-bar with <span ...>$foo$-bar</span>, so that
+-- the equation is not split when word wrapping.
+patchInlines :: [Inline] -> [Inline]
+patchInlines (m@Math{}:s@(Str txt):xs)
+  | not (Text.isPrefixOf " " txt)
+  = htmlInl "<span style=\"white-space: nowrap;\">" : m : s : htmlInl "</span>"
+  : patchInlines xs
+patchInlines (x:xs) = x:patchInlines xs
+patchInlines [] = []
+
+
+-- Make all headers links, and add an anchor emoji.
+patchBlock :: MonadIO f => Block -> f Block
+patchBlock (Header i a@(ident, _, _) inl) = pure $ Header i a
+  $ htmlInl (Text.concat ["<a href=\"#", ident, "\" class=\"header-link\">"])
+  : inl
+  ++ [htmlInl "<span class=\"header-link-emoji\">🔗</span></a>"]
+-- Replace quiver code blocks with a link to an SVG file, and depend on the SVG file.
+patchBlock (CodeBlock (id, classes, attrs) contents) | "quiver" `elem` classes = do
+  let
+    digest = showDigest . sha1 . LazyBS.fromStrict $ Text.encodeUtf8 contents
+    title = fromMaybe "commutative diagram" (lookup "title" attrs)
+  writeFile' ("_build/diagrams" </> digest <.> "tex") $ Text.unpack contents
+
+  pure $ Div ("", ["diagram-container"], [])
+    [ Plain [ Image (id, "diagram":classes, attrs) [] (Text.pack (digest <.> "svg"), title) ]
+    ]
+patchBlock h = pure h
+
+
+patchInline :: Inline -> Action Inline
+patchInline (Math DisplayMath contents) = htmlInl <$> buildLatexEqn True contents
+patchInline (Math InlineMath contents) = htmlInl <$> buildLatexEqn False contents
+patchInline h = pure h
+
+
+mStr :: String -> MetaValue
+mStr = MetaString . Text.pack
+
+
+patchMeta :: String -> String -> Meta -> Meta
+patchMeta title permalink (Meta m) =
+  Meta $ m <> Map.fromList [ ("title", mStr title)
+                           , ("source", mStr permalink)
+                           ]
+
+
+writeTemplate :: FilePath -> Context Text -> Pandoc -> FilePath -> Action ()
+writeTemplate templateName context markdown output = do
   text <- liftIO $ either (fail . show) pure =<< runIO do
     template <- getTemplate templateName >>= runWithPartials . compileTemplate templateName
                 >>= either (throwError . PandocTemplateError . Text.pack) pure
     let
-      context = Context $ Map.fromList
-                [ (Text.pack "is-index", toVal (modname == "index"))
-                -- , (Text.pack "authors", toVal authors')
-                ]
       options = def { writerTemplate = Just template
                     , writerTableOfContents = True
                     , writerVariables = context
@@ -142,7 +126,6 @@ buildMarkdown commit input output = do
   -- TODO(sandy): dont use mempty
   -- tags <- traverse (parseAgdaLink $ const $ pure (mempty, mempty)) (parseTags text)
   writeFile' output $ Text.unpack text -- (renderHTML5 tags)
-  pure $ parseHeader meta
 
   -- command_ [] "agda-fold-equations" [output]
 
@@ -167,9 +150,11 @@ parseAgdaLink fileIds (TagOpen "a" attrs)
       _ -> error $ "Could not parse Agda link: " ++ show href
 parseAgdaLink _ x = pure x
 
+
 emplace :: Eq a => [(a, b)] -> [(a, b)] -> [(a, b)]
 emplace ((p, x) : xs) ys = (p, x) : emplace xs (filter ((/= p) . fst) ys)
 emplace [] ys = ys
+
 
 -- | Lookup an identifier given a module name and ID within that module,
 -- returning its type.

@@ -13,6 +13,8 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Writer
 import           Data.Foldable
 import           Data.List
+import           Data.Map (Map)
+import qualified Data.Map as M
 import           Data.Maybe (catMaybes)
 import qualified Data.Set as Set
 import           Data.Text (Text)
@@ -22,7 +24,9 @@ import           Development.Shake
 import           Development.Shake.FilePath
 import           Development.Shake.Forward (shakeArgsForward, forwardOptions, cacheAction)
 import qualified System.Directory as Dir
+import           Text.DocTemplates (Context(..), toVal)
 import           Text.HTML.TagSoup
+import           Text.Pandoc (Pandoc(Pandoc))
 
 
 
@@ -56,10 +60,20 @@ main =
 
 
   articles <-
-    forP (fmap ("site" </>) md_files <> md0) $ \md ->
-      buildMarkdown commit md $ getHtml1Path md
+    forP (fmap ("site" </>) md_files <> md0) $ \input -> do
+      md@(Pandoc meta _) <- loadMarkdown commit input
+      writeTemplate "support/web/template.html" mempty md $ getHtml1Path input
+      pure $ parseHeader meta
 
-  void $ forP (catMaybes articles) $ liftIO . putStrLn . show
+  let posts = reverse $ sortOn a_datetime $ catMaybes articles
+
+  writeTemplate "support/web/index.html" (Context $ M.singleton "posts" $ toVal posts) mempty $ getHtml1Path "index.html"
+
+
+
+--   buildMarkdown "support/web/index.html" commit
+
+
 
   buildDiagrams
 
