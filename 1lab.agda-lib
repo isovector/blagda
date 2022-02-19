@@ -1,6 +1,6 @@
 name: cubical-1lab
 include:
-  src
+  site
   wip
   _build
   .

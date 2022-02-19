@@ -94,7 +94,7 @@ findModule :: MonadIO m => String -> m AgdaOrMarkdown
 findModule modname = do
   let toPath '.' = '/'
       toPath c = c
-  let modfile = "src" </> map toPath modname
+  let modfile = "site" </> map toPath modname
 
   is_lagda <- liftIO $ Dir.doesFileExist (modfile <.> "lagda.md")
   is_agda <- liftIO $ Dir.doesFileExist (modfile <.> "agda")
@@ -216,7 +216,7 @@ main =
   shakeArgsForward
     (forwardOptions $ shakeOptions
       { shakeFiles="_build"
-      , shakeLintInside=["src"]
+      , shakeLintInside=["site"]
       , shakeChange=ChangeDigest
       , shakeVersion = "2"
       }) $ do
@@ -225,8 +225,8 @@ main =
   liftIO $ createDirectoryIfMissing True "_build/html1"
   liftIO $ createDirectoryIfMissing True "_build/html"
 
-  agda_files <- sort <$> getDirectoryFiles "src" ["**/*.agda", "**/*.lagda.md"]
-  md_files' <- getDirectoryFiles "src" ["**/*.md"]
+  agda_files <- sort <$> getDirectoryFiles "site" ["**/*.agda", "**/*.lagda.md"]
+  md_files' <- getDirectoryFiles "site" ["**/*.md"]
   let md_files = Set.toList $ Set.fromList md_files' Set.\\ Set.fromList agda_files
 
   let
@@ -261,7 +261,7 @@ main =
       getHtmlPath = getBuildPath "html" "html"
 
 
-  md0' <- forP (fmap ("src" </>) md_files <> md0) $ \md ->
+  md0' <- forP (fmap ("site" </>) md_files <> md0) $ \md ->
     buildMarkdown commit md $ getHtml1Path md
 
   void $ forP html0 $ \html ->
@@ -388,7 +388,7 @@ runAgda k = do
 
 setupTCM :: TCMT IO String
 setupTCM = do
-  absp <- liftIO $ absolute "./src"
+  absp <- liftIO $ absolute "./site"
   setCommandLineOptions' absp defaultOptions{optLocalInterfaces = True}
   pure (filePath absp)
 

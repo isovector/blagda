@@ -38,6 +38,9 @@ dependencies:
 - text
 - uri-encode
 
+library:
+  source-dirs: src
+
 executables:
   blagda:
     main:                Main.hs
