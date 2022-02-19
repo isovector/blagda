@@ -134,24 +134,24 @@ buildMarkdown commit input output = do
 -- link to the definition.
 parseAgdaLink :: (Text -> Action (Map Text Reference, Map Text Text))
                  -> Tag Text -> Action (Tag Text)
-parseAgdaLink fileIds tag@(TagOpen "a" attrs)
+parseAgdaLink fileIds (TagOpen "a" attrs)
   | Just href <- lookup "href" attrs, Text.pack "agda://" `Text.isPrefixOf` href = do
-    href <- pure $ Text.splitOn "#" (Text.drop (Text.length "agda://") href)
     let
-      cont mod ident = do
-        (idMap, _) <- fileIds mod
+      href' = Text.splitOn "#" $ Text.drop (Text.length "agda://") href
+      cont mdl ident = do
+        (idMap, _) <- fileIds mdl
         case Map.lookup ident idMap of
-          Just (Reference href classes) -> do
-            pure (TagOpen "a" (emplace [("href", href)] attrs))
-          _ -> error $ "Could not compile Agda link: " ++ show href
-    case href of
-      [mod] -> cont mod mod
-      [mod, ident] -> cont mod (decodeText ident)
+          Just (Reference href'' _) -> do
+            pure (TagOpen "a" (emplace [("href", href'')] attrs))
+          _ -> error $ "Could not compile Agda link: " ++ show href'
+    case href' of
+      [mdl] -> cont mdl mdl
+      [mdl, ident] -> cont mdl (decodeText ident)
       _ -> error $ "Could not parse Agda link: " ++ show href
 parseAgdaLink _ x = pure x
 
 emplace :: Eq a => [(a, b)] -> [(a, b)] -> [(a, b)]
-emplace ((p, x):xs) ys = (p, x):emplace xs (filter ((/= p) . fst) ys)
+emplace ((p, x) : xs) ys = (p, x) : emplace xs (filter ((/= p) . fst) ys)
 emplace [] ys = ys
 
 -- | Lookup an identifier given a module name and ID within that module,
@@ -161,13 +161,13 @@ addLinkType :: (Text -> Action (Map Text Reference, Map Text Text)) -- ^ Lookup 
              -> Tag Text -> Action (Tag Text)
 addLinkType fileIds fileTys tag@(TagOpen "a" attrs)
   | Just href <- lookup "href" attrs
-  , [mod, _] <- Text.splitOn ".html#" href = do
-    ty <- resolveId mod href <$> fileIds mod <*> fileTys ()
+  , [mdl, _] <- Text.splitOn ".html#" href = do
+    ty <- resolveId mdl href <$> fileIds mdl <*> fileTys ()
     pure case ty of
       Nothing -> tag
       Just ty -> TagOpen "a" (emplace [("data-type", ty)] attrs)
 
     where
-      resolveId mod href (_, ids) types = Map.lookup href types
+      resolveId _ href (_, _) types = Map.lookup href types
 addLinkType _ _ x = pure x
 
