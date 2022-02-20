@@ -35,7 +35,7 @@ main =
       { shakeFiles="_build"
       , shakeLintInside=["site"]
       , shakeChange=ChangeDigest
-      , shakeVersion = "3"
+      , shakeVersion = "6"
       }) $ do
 
 
@@ -77,7 +77,6 @@ main =
     let out = getHtmlPath input
     text <- liftIO $ Text.readFile input
     tags <- traverse (addLinkType fileIdents fileTypes) $ parseTags text
-    tags <- pure $ parseTags text
     traverse_ (checkMarkup (takeFileName out)) tags
     writeFile' out $ Text.unpack $  renderHTML5 tags
 
