@@ -36,6 +36,7 @@ dependencies:
 - syb
 - tagsoup
 - text
+- unordered-containers
 - uri-encode
 - time
 

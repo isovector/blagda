@@ -13,7 +13,6 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Writer
 import           Data.Foldable
 import           Data.List
-import           Data.Map (Map)
 import qualified Data.Map as M
 import           Data.Maybe (catMaybes)
 import qualified Data.Set as Set
@@ -35,7 +34,7 @@ main =
       { shakeFiles="_build"
       , shakeLintInside=["site"]
       , shakeChange=ChangeDigest
-      , shakeVersion = "6"
+      , shakeVersion = "8"
       }) $ do
 
 

@@ -25,6 +25,7 @@ import           Text.DocTemplates
 import           Text.HTML.TagSoup
 import           Text.Pandoc
 import           Text.Pandoc.Walk
+import Blagda.References (linkDocument)
 
 
 data Reference = Reference
@@ -57,7 +58,7 @@ loadMarkdown commit input = do
   markdown <- pure . walk patchInlines . Pandoc (patchMeta title permalink meta) $ markdown
   markdown <- walkM patchInline markdown
   markdown <- walkM patchBlock markdown
-  pure markdown
+  pure $ linkDocument markdown
 
 
 htmlInl :: Text -> Inline
