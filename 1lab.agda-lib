@@ -5,8 +5,8 @@ include:
   _build
   .
 flags:
-  --cubical
-  --no-import-sorts
   --postfix-projections
   --rewriting
   --guardedness
+depend:
+  standard-library

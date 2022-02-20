@@ -130,9 +130,9 @@ builtinModules :: [String]
 builtinModules =
   [ "Agda.Builtin.Bool"
   , "Agda.Builtin.Char"
-  , "Agda.Builtin.Cubical.HCompU"
-  , "Agda.Builtin.Cubical.Path"
-  , "Agda.Builtin.Cubical.Sub"
+  -- , "Agda.Builtin.Cubical.HCompU"
+  -- , "Agda.Builtin.Cubical.Path"
+  -- , "Agda.Builtin.Cubical.Sub"
   , "Agda.Builtin.Float"
   , "Agda.Builtin.FromNat"
   , "Agda.Builtin.FromNeg"

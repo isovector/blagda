@@ -28,12 +28,6 @@ import           Text.DocTemplates (Context(..), toVal)
 import           Text.HTML.TagSoup
 import           Text.Pandoc (Pandoc(Pandoc))
 
-
-
-renderHTML5 :: [Tag Text] -> Text
-renderHTML5 = renderTagsOptions renderOptions{ optMinimize = min } where
-  min = flip elem ["br", "meta", "link", "img", "hr"]
-
 main :: IO ()
 main =
   shakeArgsForward
@@ -41,11 +35,13 @@ main =
       { shakeFiles="_build"
       , shakeLintInside=["site"]
       , shakeChange=ChangeDigest
-      , shakeVersion = "2"
+      , shakeVersion = "3"
       }) $ do
 
 
   agda_files <- agdaHTML
+  fileIdents <- liftIO $ newCacheIO parseFileIdents
+  fileTypes <- liftIO $ newCacheIO parseFileTypes
 
   md_files' <- getDirectoryFiles "site" ["**/*.md"]
   let md_files = Set.toList $ Set.fromList md_files' Set.\\ Set.fromList agda_files
@@ -62,18 +58,13 @@ main =
   articles <-
     forP (fmap ("site" </>) md_files <> md0) $ \input -> do
       md@(Pandoc meta _) <- loadMarkdown commit input
-      writeTemplate "support/web/template.html" mempty md $ getHtml1Path input
+      writeTemplate "support/web/template.html" mempty fileIdents md $ getHtml1Path input
       pure $ parseHeader (Text.pack $ dropExtension $ takeFileName input) meta
 
   let posts = reverse $ sortOn a_datetime $ catMaybes articles
 
-  writeTemplate "support/web/index.html" (Context $ M.singleton "posts" $ toVal posts) mempty $ getHtml1Path "index.html"
-
-
-
---   buildMarkdown "support/web/index.html" commit
-
-
+  writeTemplate "support/web/index.html" (Context $ M.singleton "posts" $ toVal posts) fileIdents mempty $
+    getHtml1Path "index.html"
 
   buildDiagrams
 
@@ -85,11 +76,10 @@ main =
   void $ forP html1 $ \input -> do
     let out = getHtmlPath input
     text <- liftIO $ Text.readFile input
-    -- tags <- traverse (addLinkType undefined undefined) (parseTags text)
+    tags <- traverse (addLinkType fileIdents fileTypes) $ parseTags text
     tags <- pure $ parseTags text
     traverse_ (checkMarkup (takeFileName out)) tags
     writeFile' out $ Text.unpack $  renderHTML5 tags
-
 
   sass <- getDirectoryFiles "" ["support/web/*.scss"]
   void $ forP sass $ \input ->

@@ -110,9 +110,32 @@ patchMeta title permalink (Meta m) =
                            , ("source", mStr permalink)
                            ]
 
+-- | Parse an Agda module (in the final build directory) to find a list
+-- of its definitions.
+parseFileIdents :: Text -> Action (Map Text Reference, Map Text Text)
+parseFileIdents mdl =
+  do
+    let path = "_build/html1" </> Text.unpack mdl <.> "html"
+    need [ path ]
+    traced ("parsing " ++ Text.unpack mdl) do
+      go mempty mempty . parseTags <$> Text.readFile path
+  where
+    go fwd rev (TagOpen "a" attrs:TagText name:TagClose "a":xs)
+      | Just id <- lookup "id" attrs, Just href <- lookup "href" attrs
+      , Just classes <- lookup "class" attrs
+      , mdl `Text.isPrefixOf` href, id `Text.isSuffixOf` href
+      = go (Map.insert name (Reference href (Text.words classes)) fwd)
+           (Map.insert href name rev) xs
+      | Just classes <- lookup "class" attrs, Just href <- lookup "href" attrs
+      , "Module" `elem` Text.words classes, mdl `Text.isPrefixOf` href
+      = go (Map.insert name (Reference href (Text.words classes)) fwd)
+           (Map.insert href name rev) xs
+    go fwd rev (_:xs) = go fwd rev xs
+    go fwd rev [] = (fwd, rev)
 
-writeTemplate :: FilePath -> Context Text -> Pandoc -> FilePath -> Action ()
-writeTemplate templateName context markdown output = do
+
+writeTemplate :: FilePath -> Context Text -> (Text -> Action (Map Text Reference, Map Text Text)) -> Pandoc -> FilePath -> Action ()
+writeTemplate templateName context fileIdents markdown output = do
   text <- liftIO $ either (fail . show) pure =<< runIO do
     template <- getTemplate templateName >>= runWithPartials . compileTemplate templateName
                 >>= either (throwError . PandocTemplateError . Text.pack) pure
@@ -123,9 +146,14 @@ writeTemplate templateName context markdown output = do
                     , writerExtensions = getDefaultExtensions "html" }
     writeHtml5String options markdown
 
-  -- TODO(sandy): dont use mempty
-  -- tags <- traverse (parseAgdaLink $ const $ pure (mempty, mempty)) (parseTags text)
-  writeFile' output $ Text.unpack text -- (renderHTML5 tags)
+  tags <- traverse (parseAgdaLink fileIdents) $ parseTags text
+  writeFile' output $ Text.unpack $ renderHTML5 tags
+
+
+renderHTML5 :: [Tag Text] -> Text
+renderHTML5 = renderTagsOptions renderOptions
+  { optMinimize = flip elem ["br", "meta", "link", "img", "hr"]
+  }
 
   -- command_ [] "agda-fold-equations" [output]
 
@@ -164,10 +192,13 @@ addLinkType :: (Text -> Action (Map Text Reference, Map Text Text)) -- ^ Lookup 
 addLinkType fileIds fileTys tag@(TagOpen "a" attrs)
   | Just href <- lookup "href" attrs
   , [mdl, _] <- Text.splitOn ".html#" href = do
-    ty <- resolveId mdl href <$> fileIds mdl <*> fileTys ()
-    pure case ty of
-      Nothing -> tag
-      Just ty -> TagOpen "a" (emplace [("data-type", ty)] attrs)
+    case Text.isInfixOf "/" mdl of
+      True -> pure tag
+      False -> do
+        ty <- resolveId mdl href <$> fileIds mdl <*> fileTys ()
+        pure $ case ty of
+          Nothing -> tag
+          Just ty -> TagOpen "a" (emplace [("data-type", ty)] attrs)
 
     where
       resolveId _ href (_, _) types = Map.lookup href types

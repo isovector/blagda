@@ -26,29 +26,6 @@ import           Text.HTML.TagSoup
 import           Text.Pandoc
 
 
--- | Parse an Agda module (in the final build directory) to find a list
--- of its definitions.
-parseFileIdents :: Text -> Action (Map Text Reference, Map Text Text)
-parseFileIdents mod =
-  do
-    let path = "_build/html1" </> Text.unpack mod <.> "html"
-    need [ path ]
-    traced ("parsing " ++ Text.unpack mod) do
-      go mempty mempty . parseTags <$> Text.readFile path
-  where
-    go fwd rev (TagOpen "a" attrs:TagText name:TagClose "a":xs)
-      | Just id <- lookup "id" attrs, Just href <- lookup "href" attrs
-      , Just classes <- lookup "class" attrs
-      , mod `Text.isPrefixOf` href, id `Text.isSuffixOf` href
-      = go (Map.insert name (Reference href (Text.words classes)) fwd)
-           (Map.insert href name rev) xs
-      | Just classes <- lookup "class" attrs, Just href <- lookup "href" attrs
-      , "Module" `elem` Text.words classes, mod `Text.isPrefixOf` href
-      = go (Map.insert name (Reference href (Text.words classes)) fwd)
-           (Map.insert href name rev) xs
-    go fwd rev (_:xs) = go fwd rev xs
-    go fwd rev [] = (fwd, rev)
-
 --  Loads our type lookup table into memory
 parseFileTypes :: () -> Action (Map Text Text)
 parseFileTypes () = do
@@ -68,8 +45,7 @@ agdaHTML = do
 
   -- build the index
   writeFileLines "_build/all-pages.agda"
-    $ "{-# OPTIONS --cubical #-}"
-      : ["open import " ++ toOut x | x <- agda_files]
+    $ ["open import " ++ toOut x | x <- agda_files]
      ++ ["import " ++ x ++ " -- (builtin)" | x <- builtinModules]
 
   -- get agda html
