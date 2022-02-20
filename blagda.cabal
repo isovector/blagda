@@ -28,6 +28,7 @@ library
       Blagda
       Blagda.Agda
       Blagda.Diagrams
+      Blagda.Equations
       Blagda.Latex
       Blagda.Markdown
       Blagda.References

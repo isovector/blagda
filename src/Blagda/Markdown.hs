@@ -5,7 +5,9 @@
 module Blagda.Markdown where
 
 import           Blagda.Agda
+import           Blagda.Equations (hideSteps)
 import           Blagda.Latex
+import           Blagda.References (linkDocument)
 import           Control.Monad.Error.Class
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy as LazyBS
@@ -25,7 +27,6 @@ import           Text.DocTemplates
 import           Text.HTML.TagSoup
 import           Text.Pandoc
 import           Text.Pandoc.Walk
-import Blagda.References (linkDocument)
 
 
 data Reference = Reference
@@ -148,7 +149,7 @@ writeTemplate templateName context fileIdents markdown output = do
     writeHtml5String options markdown
 
   tags <- traverse (parseAgdaLink fileIdents) $ parseTags text
-  writeFile' output $ Text.unpack $ renderHTML5 tags
+  writeFile' output $ Text.unpack $ renderHTML5 $ hideSteps False tags
 
 
 renderHTML5 :: [Tag Text] -> Text
