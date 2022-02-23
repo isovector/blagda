@@ -49,15 +49,16 @@ agdaHTML = do
      ++ ["import " ++ x ++ " -- (builtin)" | x <- builtinModules]
 
   -- get agda html
-  cacheAction @String @() "agda" $
-    command [] "agda"
-      [ "--html"
-      , "--html-dir=_build/html0"
-      , "--html-highlight=auto"
-      , "--local-interfaces"
-      , "--css=/css/agda-cats.css"
-      , "_build/all-pages.agda"
-      ]
+  -- cacheAction @String @() "agda" $
+
+  command @() [] "agda"
+    [ "--html"
+    , "--html-dir=_build/html0"
+    , "--html-highlight=auto"
+    , "--local-interfaces"
+    , "--css=/css/agda-cats.css"
+    , "_build/all-pages.agda"
+    ]
 
   pure agda_files
 

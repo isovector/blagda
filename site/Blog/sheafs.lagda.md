@@ -253,14 +253,14 @@ $$
 \begin{bmatrix}
 2 \\ 1
 \end{bmatrix}
-\in Stalk v1
+\in \text{Stalk } v1
 $$
 
 $$
 \begin{bmatrix}
 3 \\ -1 \\ 0
 \end{bmatrix}
-\in Stalk v2
+\in \text{Stalk } v2
 $$
 
 and
@@ -269,15 +269,17 @@ $$
 \begin{bmatrix}
 1 \\ -1
 \end{bmatrix}
-\in Stalk e12
+\in \text{Stalk } e12
 $$
 
 which is all fine and dandy, except that when we categorize, our objects no
 longer have internal structure. Fortunately, we can use "generalized elements,"
 a.k.a., morphisms out of the `terminal`{.Agda} object.
 
+<!--
 ```
-module _ {pre : Preorder}
+module BadSections
+         {pre : Preorder}
          {C : Category}
          (term : HasTerminal C)
          (sheaf : Sheaf.Sheaf pre C) where
@@ -285,7 +287,10 @@ module _ {pre : Preorder}
   open Preorder pre
   open Sheaf.Sheaf sheaf
   open Category C
+```
+-->
 
+```
   Section : Carrier → Set
   Section c = terminal ~> Stalk c
 ```
@@ -295,17 +300,16 @@ That is, a `Section`{.Agda} is a mapping from every element in the
 evaluate a `Section`{.Agda} by checking the commutativity of all
 `restrict`{.Agda}s. That is, we'd like the following diagram to commute:
 
-```do-a-quiver
-                       id
-           0  -------------------~>  0
-
-           |                         |
-Section v1 |                         | Section e12
-           v                         v
-
-          v1  ------------------~>  e12
-                restrict e12<v1
-```
+~~~{.quiver}
+\[\begin{tikzcd}
+  && {0} \\
+  \\
+  {\text{Stalk } v_1} &&&& {\text{Stalk } e_{12}}
+  \arrow["{\text{Section }v_1}"', from=1-3, to=3-1]
+  \arrow["{\text{Section } e_{12}}", from=1-3, to=3-5]
+  \arrow["{\text{restrict } e_{12}<v_1}"', from=3-1, to=3-5]
+\end{tikzcd}\]
+~~~
 
 Doing this in Agda is hard because it wants lots of dumb arithmetic proofs, so
 instead we'll make ourselves content with some by-hand math:
@@ -321,11 +325,174 @@ r \circ S v1
     \end{bmatrix}
 =  \begin{bmatrix}
       1 \\
-      -2
+      2
     \end{bmatrix}
 \neq
     \begin{bmatrix}
     1 \\ -1
     \end{bmatrix}
 $$
+
+So, our chosen `Section`{.Agda} doesn't commute. That is, it doesn't respect the
+global equalities, thus it is not a *global section.* Sounds like something
+worth formalizing:
+
+```
+  record GlobalSection : Set where
+    field
+      section : forall (c : Carrier) → Section c
+      commutes
+        : {x y : Carrier}
+        → (x<y : x < y)
+        → restrict x<y ∘ section y ≈ section x
+```
+
+All that's left is to find a `GlobalSection`{.Agda} of our weird graph category:
+
+<!--
+```
+module BadEx where
+  open import Category.LIN
+  open import Category.SET
+  open Preorder
+  open Category LIN
+  open Sheaf ex-preorder LIN
+  open Sheaf.Sheaf
+  open LinMap
+  open import Data.Vec hiding (restrict)
+  open import Data.Integer
+  import Relation.Binary.PropositionalEquality as Eq
+  open Eq using (_≡_; cong; sym; refl)
+  open Eq.≡-Reasoning
+  open import Data.Integer
+  open import Data.Integer.Properties using (*-zeroˡ)
+```
+-->
+
+-- TODO(sandy): make this cleaner
+
+Unfortunately, this formalization doesn't quite work out; there are no arrows
+out of `terminal`{.Agda}:
+
+```
+  boring-arrows
+      : (f : 0 ~> 1)
+      → (x : Vec ℤ 0)
+      → f .linmap x ≡ + 0 ∷ []
+  boring-arrows f [] with f .linmap [] in eq
+  ... | x ∷ [] rewrite sym eq =
+    begin
+      f .linmap []                 ≡⟨⟩
+      f .linmap (map (+ 0 *_) [])  ≡⟨ f .preserves-* (+ 0) _ ⟩
+      map (+ 0 *_) (f .linmap [])  ≡⟨ cong (map (+ 0 *_)) eq ⟩
+      map (+ 0 *_) (x ∷ [])        ≡⟨⟩
+      (+ 0 * x) ∷ []               ≡⟨ cong (_∷ []) (*-zeroˡ +0) ⟩
+      +0 ∷ []
+    ∎
+```
+
+So, that's no good. We've modeled `Section`{.Agda} incorrectly, as the
+generalized element approach doesn't work, since we are unable to follow the
+example.
+
+What are some other ways to go from an `Obj`{.Agda} to a `Set`{.Agda}? Maybe we
+could try modeling this as a functor to `SET`{.Agda} instead:
+
+<!--
+```
+module _ where
+  open import Category.LIN
+  open import Category.SET
+  open import Category.MyFunctor
+  open import Data.Vec hiding (restrict)
+  open import Data.Integer
+  open _=>_
+  open LinMap
+  open import Relation.Binary.PropositionalEquality using (refl)
+```
+-->
+
+```
+  ex-func : LIN => SET
+  ex-func .F-Obj x = Vec ℤ x
+  ex-func .F-map f = f .linmap
+  ex-func .F-map-id _ _ = refl
+  ex-func .F-map-∘ g f a = refl
+```
+
+And we can try again with `Section`s:
+
+and then we can say a `Section` is an element of the action of `Func`{.Agda}:
+
+<!--
+```
+open import Category.SET
+import Category.MyFunctor
+module Sections
+         {pre : Preorder}
+         {C : Category}
+         (Func : C Category.MyFunctor.=> SET)
+         (sheaf : Sheaf.Sheaf pre C) where
+  open Preorder pre
+  open Sheaf.Sheaf sheaf
+  open Category.MyFunctor._=>_ Func
+  open Category SET
+  open import Relation.Binary.PropositionalEquality using (_≡_)
+```
+-->
+
+```
+  Section : Carrier → Set
+  Section c = F-Obj (Stalk c)
+```
+
+and a `GlobalSection`, which recall, is a globally-coherent assignment of
+sections:
+
+```
+  record GlobalSection : Set where
+    field
+      section : forall (c : Carrier) → Section c
+      commutes
+        : {x y : Carrier}
+        → (x<y : x < y)
+        → F-map (restrict x<y) (section y) ≡ section x
+```
+
+<!--
+```
+module GoodEx where
+  open import Category.LIN
+  open import Category.SET
+  open Preorder
+  open Category LIN
+  open Sheaf ex-preorder LIN
+  open Sheaf.Sheaf
+  open LinMap
+  open import Data.Vec hiding (restrict)
+  open import Data.Integer
+  import Relation.Binary.PropositionalEquality as Eq
+  open Eq using (_≡_; cong; sym; refl)
+  open Eq.≡-Reasoning
+  open import Data.Integer
+  open import Data.Integer.Properties using (*-zeroˡ)
+  open Sections ex-func ex
+  open GlobalSection
+```
+-->
+
+```
+  soln : GlobalSection
+  soln .section v1 = + 2 ∷ + 1 ∷ []
+  soln .section v2 = -[1+ 1 ] ∷ + 10 ∷ + 3 ∷ []
+  soln .section e12 = + 1 ∷ + 2 ∷ []
+  soln .commutes e12<v1 = refl
+  soln .commutes e12<v2 = refl
+  soln .commutes (ex<-refl _) = refl
+  soln .commutes (ex<-trans _ b _ x<y x<y2) rewrite soln .commutes x<y2
+    rewrite soln . commutes x<y = ?
+```
+
+
+
 
