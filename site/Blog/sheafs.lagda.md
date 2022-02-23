@@ -100,17 +100,22 @@ and two cases to satisfy the preorder laws:
 
 ```
   ex<-refl : (x : Ex) → Ex< x x
-  ex<-trans : (a b c : Ex) → Ex< a b → Ex< b c → Ex< a c
 ```
 
 and then mechanically hook everything up:
 
 ```
-ex-preorder : Preorder
-ex-preorder .Preorder.Carrier = Ex
-ex-preorder .Preorder._<_ = Ex<
-ex-preorder .Preorder.<-refl = ex<-refl
-ex-preorder .Preorder.<-trans = ex<-trans
+module _ where
+  open Preorder
+  ex-preorder : Preorder
+  ex-preorder .Carrier = Ex
+  ex-preorder ._<_ = Ex<
+  ex-preorder .<-refl = ex<-refl
+  ex-preorder .<-trans _ _ _ e12<v1 (ex<-refl .v1) = e12<v1
+  ex-preorder .<-trans _ _ _ e12<v2 (ex<-refl .v2) = e12<v2
+  ex-preorder .<-trans _ _ _ (ex<-refl _) e12<v1 = e12<v1
+  ex-preorder .<-trans _ _ _ (ex<-refl _) e12<v2 = e12<v2
+  ex-preorder .<-trans _ _ _ (ex<-refl x) (ex<-refl _) = ex<-refl x
 ```
 
 
@@ -234,8 +239,6 @@ Thus, we can finally build the example `Sheaf`:
   ex .restrict e12<v1 = e12~>v1
   ex .restrict e12<v2 = e12~>v2
   ex .restrict (ex<-refl z) = id
-  ex .restrict (ex<-trans _ _ _ g f) =
-    ex .restrict g ∘ ex .restrict f
 ```
 
 What's with the `Stalk`{.Agda} of `v1`{.Agda} being 2, you might ask? Remember,
@@ -465,7 +468,6 @@ module GoodEx where
   open import Category.LIN
   open import Category.SET
   open Preorder
-  open Category LIN
   open Sheaf ex-preorder LIN
   open Sheaf.Sheaf
   open LinMap
@@ -482,6 +484,10 @@ module GoodEx where
 -->
 
 ```
+  open Category.MyFunctor
+  open Sheaf.Sheaf ex
+  open Sections.GlobalSection
+  open Category.MyFunctor._=>_ ex-func
   soln : GlobalSection
   soln .section v1 = + 2 ∷ + 1 ∷ []
   soln .section v2 = -[1+ 1 ] ∷ + 10 ∷ + 3 ∷ []
@@ -489,10 +495,31 @@ module GoodEx where
   soln .commutes e12<v1 = refl
   soln .commutes e12<v2 = refl
   soln .commutes (ex<-refl _) = refl
-  soln .commutes (ex<-trans _ b _ x<y x<y2) rewrite soln .commutes x<y2
-    rewrite soln . commutes x<y = ?
 ```
 
+Sure enough, this was a global section:
 
+$$
+\begin{bmatrix}
+2 \\ 1
+\end{bmatrix}
+\in \text{Stalk } v1
+$$
+
+$$
+\begin{bmatrix}
+-2 \\ 10 \\ 3
+\end{bmatrix}
+\in \text{Stalk } v2
+$$
+
+and
+
+$$
+\begin{bmatrix}
+1 \\ 2
+\end{bmatrix}
+\in \text{Stalk } e12
+$$
 
 
