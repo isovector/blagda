@@ -10,6 +10,20 @@ tags: kidney, ring solving, agda, review
 {-# OPTIONS --type-in-type #-}
 
 module Blog.sheafs where
+
+open import Data.Integer hiding (_<_)
+open import Data.Integer.Properties using (*-zeroˡ; ≤-reflexive; ≤-trans)
+open import Data.Vec hiding (restrict)
+open import Categories
+open import Category.LIN
+open import Category.SET
+open import Category.AGRP
+open import Category.MyFunctor
+import Relation.Binary.PropositionalEquality as Eq
+
+open Eq using (_≡_; cong; sym; refl)
+open Eq.≡-Reasoning
+open LinMap
 ```
 
 A while back I reviewed some paper (maybe codata? --- too lazy to check) and
@@ -155,7 +169,6 @@ category. Which then probably means the `Stalk` isn't a function to
 OK, so that all seems straightforward enough. Let's try to formalize it.
 
 ```
-open import Categories
 module Sheaf (pre : Preorder) (C : Category) where
   open Preorder pre
   open Category C
@@ -182,18 +195,13 @@ algebra, with objects as vector spaces, and morphisms as linear maps):
 <!--
 ```
 module _ where
-  open import Category.LIN
   open Category LIN
   open Sheaf ex-preorder LIN
   open Sheaf.Sheaf
-  open LinMap
-  open import Data.Vec hiding (restrict)
-  open import Data.Integer
 
-  import Relation.Binary.PropositionalEquality as Eq
-  open Eq using (_≡_)
   postulate
     trustMe : ∀ {A : Set} {a b : A} → a ≡ b
+    sorry : ∀ {A : Set} → A
 ```
 -->
 
@@ -355,20 +363,10 @@ All that's left is to find a `GlobalSection`{.Agda} of our weird graph category:
 <!--
 ```
 module BadEx where
-  open import Category.LIN
-  open import Category.SET
   open Preorder
   open Category LIN
   open Sheaf ex-preorder LIN
   open Sheaf.Sheaf
-  open LinMap
-  open import Data.Vec hiding (restrict)
-  open import Data.Integer
-  import Relation.Binary.PropositionalEquality as Eq
-  open Eq using (_≡_; cong; sym; refl)
-  open Eq.≡-Reasoning
-  open import Data.Integer
-  open import Data.Integer.Properties using (*-zeroˡ)
 ```
 -->
 
@@ -404,13 +402,7 @@ could try modeling this as a functor to `SET`{.Agda} instead:
 <!--
 ```
 module _ where
-  open import Category.LIN
-  open import Category.SET
-  open import Category.MyFunctor
-  open import Data.Vec hiding (restrict)
-  open import Data.Integer
   open _=>_
-  open LinMap
   open import Relation.Binary.PropositionalEquality using (refl)
 ```
 -->
@@ -429,7 +421,6 @@ and then we can say a `Section` is an element of the action of `Func`{.Agda}:
 
 <!--
 ```
-open import Category.SET
 import Category.MyFunctor
 module Sections
          {pre : Preorder}
@@ -465,29 +456,15 @@ sections:
 <!--
 ```
 module GoodEx where
-  open import Category.LIN
-  open import Category.SET
-  open Preorder
   open Sheaf ex-preorder LIN
-  open Sheaf.Sheaf
-  open LinMap
-  open import Data.Vec hiding (restrict)
-  open import Data.Integer
-  import Relation.Binary.PropositionalEquality as Eq
-  open Eq using (_≡_; cong; sym; refl)
-  open Eq.≡-Reasoning
-  open import Data.Integer
-  open import Data.Integer.Properties using (*-zeroˡ)
+  open Sheaf.Sheaf ex
   open Sections ex-func ex
   open GlobalSection
+  open Category.MyFunctor._=>_ ex-func
 ```
 -->
 
 ```
-  open Category.MyFunctor
-  open Sheaf.Sheaf ex
-  open Sections.GlobalSection
-  open Category.MyFunctor._=>_ ex-func
   soln : GlobalSection
   soln .section v1 = + 2 ∷ + 1 ∷ []
   soln .section v2 = -[1+ 1 ] ∷ + 10 ∷ + 3 ∷ []
@@ -521,5 +498,65 @@ $$
 \end{bmatrix}
 \in \text{Stalk } e12
 $$
+
+
+
+## Example: Continuous Intervals
+
+```
+infix 3 [_,_]
+record Interval : Set where
+  constructor [_,_]
+  field
+    start : ℤ
+    end : ℤ
+open Interval
+
+open Data.Integer using () renaming (_≤_ to _≤Z_)
+
+module _ where
+  open Preorder
+
+  data IntervalArr : Interval → Interval → Set where
+    is-smaller
+        : (small big : Interval)
+        → big .start ≤ small .start
+        → small .end ≤ big .end
+        → IntervalArr small big
+
+
+  int-preorder : Preorder
+  int-preorder .Carrier = Interval
+  int-preorder ._<_  = IntervalArr
+  int-preorder .<-refl a =
+    is-smaller a a (≤-reflexive refl) (≤-reflexive refl)
+  int-preorder .<-trans a b c (is-smaller .a .b bas bae)
+                              (is-smaller .b .c cbs cbe) =
+     is-smaller a c (≤-trans cbs bas) (≤-trans bae cbe)
+
+  open import Algebra.Bundles
+  open import Algebra.Structures
+  open Sheaf int-preorder AGRP
+  open Sheaf.Sheaf
+  open AbelianGroup
+
+  int : Sheaf
+  int .Stalk x .Carrier = ℤ → ℤ
+  int .Stalk x ._≈_ f g = forall a → f a ≡ g a
+  int .Stalk x ._∙_ f g z = f z + g z
+  int .Stalk x .ε _ = + 0
+  (int .Stalk x ⁻¹) f z = - f z
+  int .Stalk x .isAbelianGroup = sorry
+  int .restrict x .AGrpArr.map f a = f a
+  int .restrict x .AGrpArr.preserves-∙ f g a = Eq.refl
+  int .restrict x .AGrpArr.preserves-ε a = Eq.refl
+  int .restrict x .AGrpArr.preserves-inv f a = Eq.refl
+  int .restrict x .AGrpArr.preserves-≈ f g eq = eq
+
+
+```
+
+
+
 
 
