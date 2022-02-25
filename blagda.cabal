@@ -32,6 +32,7 @@ library
       Blagda.Latex
       Blagda.Markdown
       Blagda.References
+      Blagda.Rename
       Blagda.Template
       Blagda.Types
       Blagda.Utils

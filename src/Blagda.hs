@@ -6,10 +6,16 @@
 
 module Blagda
   ( module Blagda
+  , module Blagda.Template
   , module Blagda.Types
+  , loadMarkdown
+  , rename
   ) where
 
 import Blagda.Agda
+import Blagda.Markdown
+import Blagda.Template
+import Blagda.Rename (rename)
 import Blagda.Types
 import Blagda.Utils (pattern Strs)
 import Data.List

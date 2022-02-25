@@ -39,7 +39,7 @@ data Reference = Reference
 -- Even if it isn't, the file still gets generated.
 loadMarkdown :: (Meta -> a) -> String -> FilePath -> Action (Post Pandoc a)
 loadMarkdown f commit input = do
-  let url = input
+  let url = dropDirectory1 input
       modname = moduleName (dropDirectory1 (dropDirectory1 (dropExtension input)))
       permalink = commit </> input
 
@@ -63,7 +63,7 @@ loadMarkdown f commit input = do
   markdown <- pure $ linkDocument markdown
 
   pure $ Post
-    { p_path = input
+    { p_path = url
     , p_contents = markdown
     , p_meta = f meta
     }
@@ -158,7 +158,10 @@ renderPost fileIdents options po = do
   text <- liftIO $ either (fail . show) pure =<< runIO do
     writeHtml5String options $ p_contents po
   tags <- traverse (parseAgdaLink fileIdents) $ parseTags text
-  pure $ po { p_contents = renderHTML5 $ hideSteps False tags }
+  pure $ po
+    { p_path = dropExtension (p_path po) <.> "html"
+    , p_contents = renderHTML5 $ hideSteps False tags
+    }
 
 
 -- writeTemplate :: FilePath -> Context Text -> (Text -> Action (Map Text Reference, Map Text Text)) -> Pandoc -> FilePath -> Action ()

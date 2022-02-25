@@ -1,6 +1,6 @@
-{-# LANGUAGE BlockArguments, OverloadedStrings #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving, TypeFamilies, FlexibleContexts #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 
 module Main (main) where
@@ -11,39 +11,37 @@ import           Blagda.Markdown
 import           Blagda.Utils
 import           Control.Monad.IO.Class
 import           Control.Monad.Writer
+import           Data.Aeson
 import           Data.Foldable
 import           Data.List
-import qualified Data.Map as M
+import qualified Data.Map as Map
 import           Data.Maybe (catMaybes)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
+import           Data.Time (UTCTime, defaultTimeLocale, parseTimeM)
 import           Development.Shake
 import           Development.Shake.FilePath
 import           Development.Shake.Forward (shakeArgsForward, forwardOptions)
+import           GHC.Generics (Generic)
 import qualified System.Directory as Dir
-import           Text.DocTemplates (Context(..), toVal)
 import           Text.HTML.TagSoup
-import           Text.Pandoc (Pandoc(Pandoc), Meta (Meta))
-import Data.Time (UTCTime, defaultTimeLocale, parseTimeM)
-import qualified Data.Map as Map
+import           Text.Pandoc (Meta (Meta))
 
 parseHeader :: Meta -> Maybe Article
-parseHeader meta@(Meta m) =
+parseHeader (Meta m) =
   Article
     <$> (parseMetaString =<< Map.lookup "title" m)
     <*> ( parseTimeM True defaultTimeLocale "%Y-%m-%d %H:%M"
-            . Text.unpack =<< parseMetaString
-                          =<< Map.lookup "date" m)
-    <*> pure meta
+          . Text.unpack =<< parseMetaString
+                        =<< Map.lookup "date" m)
 
 data Article = Article
   { a_title    :: Text
   , a_datetime :: UTCTime
-  , a_meta     :: Meta
   }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, ToJSON)
 
 
 main :: IO ()
@@ -53,7 +51,7 @@ main =
       { shakeFiles="_build"
       , shakeLintInside=["site"]
       , shakeChange=ChangeDigest
-      , shakeVersion = "9"
+      , shakeVersion = "13"
       }) $ do
 
 
@@ -73,30 +71,31 @@ main =
       getHtmlPath = getBuildPath "html" "html"
 
 
-  articles <-
+  articles' <-
     forP (fmap ("site" </>) md_files <> md0) $ \input -> do
       post <- loadMarkdown parseHeader commit input
-      writeTemplate "support/web/template.html" mempty fileIdents (p_contents post) $ getHtml1Path input
-      pure post
+      renderPost fileIdents defaultWriterOptions post
+
+
+  let articles = rename doMyRename articles'
+  writeTemplate "template.html" articles
 
   let posts = reverse $ sortOn (a_datetime . p_meta) $ catMaybes $ fmap sequenceA articles
+  writeTemplate "index.html" $ pure $ Post "index.html" mempty $ toJSON posts
 
-  writeTemplate "support/web/index.html" (Context $ M.singleton "posts" $ toVal posts) fileIdents mempty $
-    getHtml1Path "index.html"
-
+  liftIO $ Dir.createDirectoryIfMissing True "_build/html"
   buildDiagrams
 
   void $ forP html0 $ \html ->
     liftIO $ Dir.copyFile html $ getHtml1Path html
 
-  html1 <- sort . fmap ("_build/html1" </>) <$> getDirectoryFiles "_build/html1" ["*.html"]
+  html1 <- getDirectoryFiles "_build/html1" ["**/*.html"]
 
   void $ forP html1 $ \input -> do
-    let out = getHtmlPath input
-    text <- liftIO $ Text.readFile input
-    tags <- traverse (addLinkType fileIdents fileTypes) $ parseTags text
-    traverse_ (checkMarkup (takeFileName out)) tags
-    writeFile' out $ Text.unpack $  renderHTML5 tags
+    let out = "_build/html" </> input
+    text <- liftIO $ Text.readFile $ "_build/html1" </> input
+    -- tags <- traverse (addLinkType fileIdents fileTypes) $ parseTags text
+    writeFile' out $ Text.unpack text -- $  renderHTML5 tags
 
   sass <- getDirectoryFiles "" ["support/web/*.scss"]
   void $ forP sass $ \input ->
@@ -107,13 +106,13 @@ main =
     copyFileChanged ("support/static" </> filepath) ("_build/html" </> filepath)
 
 
-checkMarkup :: FilePath -> Tag Text -> Action ()
-checkMarkup file (TagText txt)
-  |  "<!--" `Text.isInfixOf` txt || "<!–" `Text.isInfixOf` txt
-  || "-->" `Text.isInfixOf` txt  || "–>" `Text.isInfixOf` txt
-  = fail $ "[WARN] " ++ file ++ " contains misplaced <!-- or -->"
-checkMarkup _ _ = pure ()
-
+doMyRename :: Post contents (Maybe Article) -> FilePath
+doMyRename (Post s _ Nothing) = s
+doMyRename (Post s _ (Just _))
+  | isPrefixOf "Blog/20" s = "blog" </> drop (length @[] "Blog/2000-00-00-") s
+  | isPrefixOf "Blog" s = "blog" </> drop 5 s
+  | isPrefixOf "html0/Blog" s = "blog" </> drop (length @[] "html0/Blog.") s
+  | otherwise = s
 
 
 gitCommit :: Action String

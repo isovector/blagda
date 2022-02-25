@@ -64,8 +64,6 @@ Two hours later, you realize you need another parameter. You go through
 everything again, plumbing it through. It's tedious, and you can't help but feel
 like maybe there's a better way of doing this.
 
-<!--more-->
-
 ***
 
 

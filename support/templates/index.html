@@ -130,9 +130,11 @@
 
     <h1>
       <ul>
-      $for(posts)$
-      <li><a href="/$posts.slug$.html">$posts.date$ - $posts.title$</a></li>
-      $endfor$
+      {{#meta}}
+      {{#meta}}
+      <li><a href="/{{path}}">{{#meta}}{{a_datetime}} - {{a_title}}{{/meta}}</a></li>
+      {{/meta}}
+      {{/meta}}
       </ul>
     </h1>
   </article>

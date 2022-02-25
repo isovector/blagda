@@ -12,9 +12,9 @@ import           Text.Mustache
 
 writeTemplate :: ToJSON a => FilePath -> [Post Text a] -> Action ()
 writeTemplate path posts = do
-  Right template <- liftIO $ automaticCompile ["support/templates"] path
+  template <- fmap (either (error . show) id) $ liftIO $ automaticCompile ["support/templates"] path
   void $ forP posts $ \post ->
-    writeFile' ("_build/html" </> p_path post)
+    writeFile' ("_build/html1" </> p_path post)
       $ T.unpack
       $ substitute template
       $ toJSON post

@@ -905,10 +905,6 @@ The other big question I have is to what degree this importance factor is biased
 by the courts' continuous coverage. That is to say, of the most important cases
 identified, how many of them are from before CanLII started continuous coverage?
 
-<!--
-select count(*) as count, c.year from decisions d inner join coverage c on d.court = c.court where d.hash in (select hash from decisions where court != 'scc' order by importance desc limit 1000) and d.year < c.year;
--->
-
 Only 13 of the top 1000 (1.3%) cases are from before the year of continuous
 coverage. This doesn't jive with my intuition --- presumably the cases which are
 on CanLII before the date of continuous coverage *are the most important ones.*
@@ -968,8 +964,6 @@ select year, count(*) as count from decisions where hash in (select hash from de
 <figcaption>Number of top 1000 important cases with the directed importance
 metric, by year</figcaption>
 </figure>
-
-<!-- TODO(sandy): add support for missing data to lineChart -->
 
 This metric nicely prioritizes old cases, like our previous metric emphasized
 newer cases. In fact, the directed importance score puts 865 of the its top 1000
