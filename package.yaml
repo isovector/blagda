@@ -26,7 +26,6 @@ dependencies:
 - bytestring
 - containers
 - directory
-- doctemplates
 - mtl
 - pandoc
 - pandoc-types
@@ -39,6 +38,7 @@ dependencies:
 - unordered-containers
 - uri-encode
 - time
+- mustache
 
 ghc-options:
   - -Wall

@@ -23,7 +23,6 @@ import           Development.Shake
 import           Development.Shake.FilePath
 import           Network.URI.Encode (decodeText)
 import qualified System.Directory as Dir
-import           Text.DocTemplates
 import           Text.HTML.TagSoup
 import           Text.Pandoc
 import           Text.Pandoc.Walk
@@ -38,7 +37,7 @@ data Reference = Reference
 ------------------------------------------------------------------------------
 -- | The return type here is whether or not this markdown file is a BLOG POST.
 -- Even if it isn't, the file still gets generated.
-loadMarkdown :: (Meta -> a) -> String -> FilePath -> Action (Post a)
+loadMarkdown :: (Meta -> a) -> String -> FilePath -> Action (Post Pandoc a)
 loadMarkdown f commit input = do
   let url = input
       modname = moduleName (dropDirectory1 (dropDirectory1 (dropExtension input)))
@@ -68,6 +67,7 @@ loadMarkdown f commit input = do
     , p_contents = markdown
     , p_meta = f meta
     }
+
 
 
 htmlInl :: Text -> Inline
@@ -144,20 +144,37 @@ parseFileIdents mdl =
     go fwd rev [] = (fwd, rev)
 
 
-writeTemplate :: FilePath -> Context Text -> (Text -> Action (Map Text Reference, Map Text Text)) -> Pandoc -> FilePath -> Action ()
-writeTemplate templateName context fileIdents markdown output = do
-  text <- liftIO $ either (fail . show) pure =<< runIO do
-    template <- getTemplate templateName >>= runWithPartials . compileTemplate templateName
-                >>= either (throwError . PandocTemplateError . Text.pack) pure
-    let
-      options = def { writerTemplate = Just template
-                    , writerTableOfContents = True
-                    , writerVariables = context
-                    , writerExtensions = getDefaultExtensions "html" }
-    writeHtml5String options markdown
+defaultWriterOptions :: WriterOptions
+defaultWriterOptions = def
+  { writerExtensions = getDefaultExtensions "html"
+  }
 
+renderPost
+    :: (Text -> Action (Map Text Reference, Map Text Text))
+    -> WriterOptions
+    -> Post Pandoc a
+    -> Action (Post Text a)
+renderPost fileIdents options po = do
+  text <- liftIO $ either (fail . show) pure =<< runIO do
+    writeHtml5String options $ p_contents po
   tags <- traverse (parseAgdaLink fileIdents) $ parseTags text
-  writeFile' output $ Text.unpack $ renderHTML5 $ hideSteps False tags
+  pure $ po { p_contents = renderHTML5 $ hideSteps False tags }
+
+
+-- writeTemplate :: FilePath -> Context Text -> (Text -> Action (Map Text Reference, Map Text Text)) -> Pandoc -> FilePath -> Action ()
+-- writeTemplate templateName context fileIdents markdown output = do
+--   text <- liftIO $ either (fail . show) pure =<< runIO do
+--     template <- getTemplate templateName >>= runWithPartials . compileTemplate templateName
+--                 >>= either (throwError . PandocTemplateError . Text.pack) pure
+--     let
+--       options = def { writerTemplate = Just template
+--                     , writerTableOfContents = True
+--                     , writerVariables = context
+--                     , writerExtensions = getDefaultExtensions "html" }
+--     writeHtml5String options markdown
+
+--   tags <- traverse (parseAgdaLink fileIdents) $ parseTags text
+--   writeFile' output $ Text.unpack $ renderHTML5 $ hideSteps False tags
 
 
 renderHTML5 :: [Tag Text] -> Text
