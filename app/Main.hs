@@ -21,11 +21,30 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import           Development.Shake
 import           Development.Shake.FilePath
-import           Development.Shake.Forward (shakeArgsForward, forwardOptions, cacheAction)
+import           Development.Shake.Forward (shakeArgsForward, forwardOptions)
 import qualified System.Directory as Dir
 import           Text.DocTemplates (Context(..), toVal)
 import           Text.HTML.TagSoup
-import           Text.Pandoc (Pandoc(Pandoc))
+import           Text.Pandoc (Pandoc(Pandoc), Meta (Meta))
+import Data.Time (UTCTime, defaultTimeLocale, parseTimeM)
+import qualified Data.Map as Map
+
+parseHeader :: Meta -> Maybe Article
+parseHeader meta@(Meta m) =
+  Article
+    <$> (parseMetaString =<< Map.lookup "title" m)
+    <*> ( parseTimeM True defaultTimeLocale "%Y-%m-%d %H:%M"
+            . Text.unpack =<< parseMetaString
+                          =<< Map.lookup "date" m)
+    <*> pure meta
+
+data Article = Article
+  { a_title    :: Text
+  , a_datetime :: UTCTime
+  , a_meta     :: Meta
+  }
+  deriving (Eq, Ord, Show)
+
 
 main :: IO ()
 main =
@@ -34,7 +53,7 @@ main =
       { shakeFiles="_build"
       , shakeLintInside=["site"]
       , shakeChange=ChangeDigest
-      , shakeVersion = "8"
+      , shakeVersion = "9"
       }) $ do
 
 
@@ -56,11 +75,11 @@ main =
 
   articles <-
     forP (fmap ("site" </>) md_files <> md0) $ \input -> do
-      md@(Pandoc meta _) <- loadMarkdown commit input
-      writeTemplate "support/web/template.html" mempty fileIdents md $ getHtml1Path input
-      pure $ parseHeader (Text.pack $ dropExtension $ takeFileName input) meta
+      post <- loadMarkdown parseHeader commit input
+      writeTemplate "support/web/template.html" mempty fileIdents (p_contents post) $ getHtml1Path input
+      pure post
 
-  let posts = reverse $ sortOn a_datetime $ catMaybes articles
+  let posts = reverse $ sortOn (a_datetime . p_meta) $ catMaybes $ fmap sequenceA articles
 
   writeTemplate "support/web/index.html" (Context $ M.singleton "posts" $ toVal posts) fileIdents mempty $
     getHtml1Path "index.html"
@@ -81,8 +100,7 @@ main =
 
   sass <- getDirectoryFiles "" ["support/web/*.scss"]
   void $ forP sass $ \input ->
-    cacheAction input $
-      command_ [] "sass" [input, getBuildPath "html/css" "css" input]
+    command_ [] "sass" [input, getBuildPath "html/css" "css" input]
 
   statics <- getDirectoryFiles "support/static" ["**/*"]
   void $ forP statics $ \filepath ->

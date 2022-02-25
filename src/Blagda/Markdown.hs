@@ -27,6 +27,7 @@ import           Text.DocTemplates
 import           Text.HTML.TagSoup
 import           Text.Pandoc
 import           Text.Pandoc.Walk
+import Blagda.Types
 
 
 data Reference = Reference
@@ -37,9 +38,10 @@ data Reference = Reference
 ------------------------------------------------------------------------------
 -- | The return type here is whether or not this markdown file is a BLOG POST.
 -- Even if it isn't, the file still gets generated.
-loadMarkdown :: String -> FilePath -> Action Pandoc
-loadMarkdown commit input = do
-  let modname = moduleName (dropDirectory1 (dropDirectory1 (dropExtension input)))
+loadMarkdown :: (Meta -> a) -> String -> FilePath -> Action (Post a)
+loadMarkdown f commit input = do
+  let url = input
+      modname = moduleName (dropDirectory1 (dropDirectory1 (dropExtension input)))
       permalink = commit </> input
 
       title
@@ -59,7 +61,13 @@ loadMarkdown commit input = do
   markdown <- pure . walk patchInlines . Pandoc (patchMeta title permalink meta) $ markdown
   markdown <- walkM patchInline markdown
   markdown <- walkM patchBlock markdown
-  pure $ linkDocument markdown
+  markdown <- pure $ linkDocument markdown
+
+  pure $ Post
+    { p_path = input
+    , p_contents = markdown
+    , p_meta = f meta
+    }
 
 
 htmlInl :: Text -> Inline

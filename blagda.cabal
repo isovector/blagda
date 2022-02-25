@@ -32,6 +32,7 @@ library
       Blagda.Latex
       Blagda.Markdown
       Blagda.References
+      Blagda.Types
       Blagda.Utils
   other-modules:
       Paths_blagda
