@@ -78,7 +78,7 @@ record Preorder : Set where
     Carrier : Set
     _<_ : Carrier → Carrier → Set
     <-refl : (a : Carrier) → a < a
-    <-trans : (a b c : Carrier) → a < b → b < c → a < c
+    <-trans : {a b c : Carrier} → a < b → b < c → a < c
 ```
 
 and then just forget about the whole graph thing, because I am not convinced it
@@ -125,11 +125,11 @@ module _ where
   ex-preorder .Carrier = Ex
   ex-preorder ._<_ = Ex<
   ex-preorder .<-refl = ex<-refl
-  ex-preorder .<-trans _ _ _ e12<v1 (ex<-refl .v1) = e12<v1
-  ex-preorder .<-trans _ _ _ e12<v2 (ex<-refl .v2) = e12<v2
-  ex-preorder .<-trans _ _ _ (ex<-refl _) e12<v1 = e12<v1
-  ex-preorder .<-trans _ _ _ (ex<-refl _) e12<v2 = e12<v2
-  ex-preorder .<-trans _ _ _ (ex<-refl x) (ex<-refl _) = ex<-refl x
+  ex-preorder .<-trans e12<v1 (ex<-refl .v1) = e12<v1
+  ex-preorder .<-trans e12<v2 (ex<-refl .v2) = e12<v2
+  ex-preorder .<-trans (ex<-refl _) e12<v1 = e12<v1
+  ex-preorder .<-trans (ex<-refl _) e12<v2 = e12<v2
+  ex-preorder .<-trans (ex<-refl x) (ex<-refl _) = ex<-refl x
 ```
 
 
@@ -177,6 +177,12 @@ module Sheaf (pre : Preorder) (C : Category) where
     field
       Stalk : Carrier → Obj
       restrict : {x y : Carrier} → x < y → Stalk y ~> Stalk x
+      restrict-trans
+          : {x y z : Carrier}
+          → (xy : x < y)
+          → (yz : y < z)
+          → restrict (<-trans xy yz) ≈ restrict xy ∘ restrict yz
+      -- also restrict is composable?
 ```
 
 which seems reasonable. The paper now gives us a specific sheaf, with
@@ -247,6 +253,11 @@ Thus, we can finally build the example `Sheaf`:
   ex .restrict e12<v1 = e12~>v1
   ex .restrict e12<v2 = e12~>v2
   ex .restrict (ex<-refl z) = id
+  ex .restrict-trans e12<v1 (ex<-refl .v1) v = Eq.refl
+  ex .restrict-trans e12<v2 (ex<-refl .v2) v = Eq.refl
+  ex .restrict-trans (ex<-refl _) e12<v1 v = Eq.refl
+  ex .restrict-trans (ex<-refl _) e12<v2 v = Eq.refl
+  ex .restrict-trans (ex<-refl _) (ex<-refl _) v = Eq.refl
 ```
 
 What's with the `Stalk`{.Agda} of `v1`{.Agda} being 2, you might ask? Remember,
@@ -503,6 +514,14 @@ $$
 
 ## Example: Continuous Intervals
 
+The paper presents a second example as well. Maybe it's just that I'm less
+well-versed in the subject matter, but this example feels significantly more
+incoherent than the first. The idea here is to use sections of the real line as
+our preorder. That is, given $u, v : \mathbb{R} \times \mathbb{R}$, we have $u
+\leq v$ iff $v_1 \leq u_1$ and $u_2 \leq v_2$ --- that is, if $u$ is entirely
+contained by $v$. In code, we have intervals:
+
+
 ```
 infix 3 [_,_]
 record Interval : Set where
@@ -510,13 +529,22 @@ record Interval : Set where
   field
     start : ℤ
     end : ℤ
+```
+
+<!--
+```
 open Interval
 
 open Data.Integer using () renaming (_≤_ to _≤Z_)
 
 module _ where
   open Preorder
+```
+-->
 
+and a `Preorder`{.Agda} over them:
+
+```
   data IntervalArr : Interval → Interval → Set where
     is-smaller
         : (small big : Interval)
@@ -524,21 +552,39 @@ module _ where
         → small .end ≤ big .end
         → IntervalArr small big
 
-
   int-preorder : Preorder
   int-preorder .Carrier = Interval
   int-preorder ._<_  = IntervalArr
   int-preorder .<-refl a =
     is-smaller a a (≤-reflexive refl) (≤-reflexive refl)
-  int-preorder .<-trans a b c (is-smaller .a .b bas bae)
-                              (is-smaller .b .c cbs cbe) =
+  int-preorder .<-trans (is-smaller a b bas bae)
+                        (is-smaller .b c cbs cbe) =
      is-smaller a c (≤-trans cbs bas) (≤-trans bae cbe)
+```
 
+<!--
+```
   open import Algebra.Bundles
   open import Algebra.Structures
+  open AbelianGroup hiding (refl)
+```
+-->
+
+The paper now constructs a sheaf over `AGRP`{.Agda} (the category of Abelian
+groups, though it omits the category theory stuff), using `int-preorder`{.Agda}
+as the preorder. The Abelian group in particular we're going to map to is
+endomorphisms over `ℤ`{.Agda}, using integer addition as the group operation,
+and elements are combined pointwise.
+
+But *why* are we doing this? It's unclear. Nothing seems to depend on this
+Abelian group structure. This section seems to be about finding globally
+continuous functions, or something? I'm actually completely unsure what is
+supposed to be going on here. But I guess we can power on nevertheless. Lets
+build the `Stalk`{.Agda} of our sheaf:
+
+```
   open Sheaf int-preorder AGRP
   open Sheaf.Sheaf
-  open AbelianGroup
 
   int : Sheaf
   int .Stalk x .Carrier = ℤ → ℤ
@@ -547,16 +593,62 @@ module _ where
   int .Stalk x .ε _ = + 0
   (int .Stalk x ⁻¹) f z = - f z
   int .Stalk x .isAbelianGroup = sorry
-  int .restrict x .AGrpArr.map f a = f a
-  int .restrict x .AGrpArr.preserves-∙ f g a = Eq.refl
-  int .restrict x .AGrpArr.preserves-ε a = Eq.refl
-  int .restrict x .AGrpArr.preserves-inv f a = Eq.refl
-  int .restrict x .AGrpArr.preserves-≈ f g eq = eq
+```
 
+Restriction is given by literally restricting the function to be inside the
+interval. Which we could do, but would be sorta annoying, and I don't think it
+actually buys us anything. For now we'll just map the functions to themselves,
+and pretend like they've been restricted.
+
+```
+  int .restrict x .AGrpArr.map f a = f a
+  int .restrict x .AGrpArr.preserves-∙ f g a = refl
+  int .restrict x .AGrpArr.preserves-ε a = refl
+  int .restrict x .AGrpArr.preserves-inv f a = refl
+  int .restrict x .AGrpArr.preserves-≈ f g eq = eq
+  int .restrict-trans (is-smaller _ _ x x₁) yz f a = refl
+```
+
+Lovely. What's our resetriction function here
+
+```
+  open _=>_
+
+  func : AGRP => SET
+  func .F-Obj = Carrier
+  func .F-map f a = f .AGrpArr.map a
+  func .F-map-id A a = refl
+  func .F-map-∘ g f a = refl
+
+  open Sections func int
+
+  open GlobalSection
+  open import Data.Bool using (if_then_else_; true; false)
+  open import Relation.Nullary using (_because_)
+
+--   good : GlobalSection
+--   good .section c x = x
+--   good .commutes x<y = refl
+
+  discontinuous : ℤ -> ℤ
+  discontinuous (+_ n) = + 1
+  discontinuous (-[1+_] n) = + 0
+
+--   bad : GlobalSection
+--   bad .section c = discontinuous
+--   bad .commutes x<y = refl
+
+--   no-discont : (Σ GlobalSection (\x -> x .sectiodn))
+--   no-discont = ?
 
 ```
 
+Giving up after defining a discontinuous function.
 
 
+
+## Conclusion
+
+There are two different sorts of presheaves! Categorical ones, and topological ones!
 
 
