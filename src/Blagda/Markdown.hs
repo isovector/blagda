@@ -39,7 +39,7 @@ data Reference = Reference
 -- Even if it isn't, the file still gets generated.
 loadMarkdown :: (Meta -> a) -> String -> FilePath -> Action (Post Pandoc a)
 loadMarkdown f commit input = do
-  let url = dropDirectory1 input
+  let url = dropExtension (dropDirectory1 input) <.> "html"
       modname = moduleName (dropDirectory1 (dropDirectory1 (dropExtension input)))
       permalink = commit </> input
 
@@ -193,7 +193,7 @@ renderHTML5 = renderTagsOptions renderOptions
 parseAgdaLink :: (Text -> Action (Map Text Reference, Map Text Text))
                  -> Tag Text -> Action (Tag Text)
 parseAgdaLink fileIds (TagOpen "a" attrs)
-  | Just href <- lookup "href" attrs, Text.pack "agda://" `Text.isPrefixOf` href = do
+  | Just href <- lookup "href" attrs, Text.pack "agda://" `Text.isPrefixOf` href =
     let
       href' = Text.splitOn "#" $ Text.drop (Text.length "agda://") href
       cont mdl ident = do
@@ -202,10 +202,10 @@ parseAgdaLink fileIds (TagOpen "a" attrs)
           Just (Reference href'' _) -> do
             pure (TagOpen "a" (emplace [("href", href'')] attrs))
           _ -> error $ "Could not compile Agda link: " ++ show href'
-    case href' of
-      [mdl] -> cont mdl mdl
-      [mdl, ident] -> cont mdl (decodeText ident)
-      _ -> error $ "Could not parse Agda link: " ++ show href
+     in case href' of
+          [mdl] -> cont mdl mdl
+          [mdl, ident] -> cont mdl (decodeText ident)
+          _ -> error $ "Could not parse Agda link: " ++ show href
 parseAgdaLink _ x = pure x
 
 

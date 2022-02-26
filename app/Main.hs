@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Main (main) where
 
@@ -28,6 +29,7 @@ import           GHC.Generics (Generic)
 import qualified System.Directory as Dir
 import           Text.HTML.TagSoup
 import           Text.Pandoc (Meta (Meta))
+import Debug.Trace (trace)
 
 parseHeader :: Meta -> Maybe Article
 parseHeader (Meta m) =
@@ -51,7 +53,7 @@ main =
       { shakeFiles="_build"
       , shakeLintInside=["site"]
       , shakeChange=ChangeDigest
-      , shakeVersion = "13"
+      , shakeVersion = "15"
       }) $ do
 
 
@@ -68,16 +70,23 @@ main =
   html0 <- sort . fmap ("_build/html0" </>) <$> getDirectoryFiles "_build/html0" ["*.html"]
 
   let getHtml1Path = getBuildPath "html1" "html"
-      getHtmlPath = getBuildPath "html" "html"
 
 
-  articles' <-
-    forP (fmap ("site" </>) md_files <> md0) $ \input -> do
-      post <- loadMarkdown parseHeader commit input
-      renderPost fileIdents defaultWriterOptions post
+  raw_articles <-
+    forP (fmap ("site" </>) md_files) $ \input ->
+      loadMarkdown parseHeader commit input
+  raw_md <-
+    forP md0 $ fmap (\s -> s { p_path = dropDirectory1 $ p_path s } ) . loadMarkdown parseHeader commit
+
+  void $ forP html0 $ \html ->
+    liftIO $ Dir.copyFile html $ getHtml1Path html
+
+  let renamed_articles = rename doMyRename $ raw_articles <> raw_md
+  liftIO $ traverse_ (putStrLn . p_path) renamed_articles
+
+  articles <- forP renamed_articles $ renderPost fileIdents defaultWriterOptions
 
 
-  let articles = rename doMyRename articles'
   writeTemplate "template.html" articles
 
   let posts = reverse $ sortOn (a_datetime . p_meta) $ catMaybes $ fmap sequenceA articles
@@ -86,16 +95,13 @@ main =
   liftIO $ Dir.createDirectoryIfMissing True "_build/html"
   buildDiagrams
 
-  void $ forP html0 $ \html ->
-    liftIO $ Dir.copyFile html $ getHtml1Path html
-
   html1 <- getDirectoryFiles "_build/html1" ["**/*.html"]
 
   void $ forP html1 $ \input -> do
     let out = "_build/html" </> input
     text <- liftIO $ Text.readFile $ "_build/html1" </> input
-    -- tags <- traverse (addLinkType fileIdents fileTypes) $ parseTags text
-    writeFile' out $ Text.unpack text -- $  renderHTML5 tags
+    tags <- traverse (addLinkType fileIdents fileTypes) $ parseTags text
+    writeFile' out $ Text.unpack $ renderHTML5 tags
 
   sass <- getDirectoryFiles "" ["support/web/*.scss"]
   void $ forP sass $ \input ->
@@ -105,10 +111,12 @@ main =
   void $ forP statics $ \filepath ->
     copyFileChanged ("support/static" </> filepath) ("_build/html" </> filepath)
 
+traceOf :: Show b => (a -> b) -> a -> a
+traceOf f a = trace (show $ f a) a
 
-doMyRename :: Post contents (Maybe Article) -> FilePath
-doMyRename (Post s _ Nothing) = s
-doMyRename (Post s _ (Just _))
+
+doMyRename :: FilePath -> FilePath
+doMyRename s
   | isPrefixOf "Blog/20" s = "blog" </> drop (length @[] "Blog/2000-00-00-") s
   | isPrefixOf "Blog" s = "blog" </> drop 5 s
   | isPrefixOf "html0/Blog" s = "blog" </> drop (length @[] "html0/Blog.") s
