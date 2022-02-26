@@ -5,32 +5,30 @@
 
 module Blagda.Rename where
 
+import           Agda.Utils.Functor ((<&>))
+import           Blagda.Markdown (renderHTML5)
 import           Blagda.Types
-import           Data.Map (Map)
-import qualified Data.Map as M
 import           Data.Text (Text)
 import qualified Data.Text as T
+import           Text.HTML.TagSoup (Tag(TagOpen), parseTags)
 import           Text.Pandoc.Definition
 import           Text.Pandoc.Walk (walk)
-import Debug.Trace (traceM, traceShowId, trace)
-import Text.HTML.TagSoup (Tag(TagOpen), parseTags)
-import Blagda.Markdown (renderHTML5)
-import Agda.Utils.Functor ((<&>))
-import Control.Monad (when)
-import Data.List (isInfixOf)
-import System.IO.Unsafe (unsafePerformIO)
 
 rename :: (FilePath -> FilePath) -> [Post Pandoc a] -> [Post Pandoc a]
 rename f posts = do
-  let rn = T.pack . f . T.unpack
+  let rn fp =
+        let segs = T.split (flip elem ['?', '#']) fp
+         in T.intercalate "#" $ onHead segs $ T.pack . f . T.unpack
   p <- posts
-  !() <- when (isInfixOf "ring-solving" (p_path p)) $ pure $ unsafePerformIO $ writeFile "/tmp/pandoc-in" $ show $ p_contents p
   let res = walk (replaceBlock rn) $ walk (replaceInline rn) $ p_contents p
-  !() <- when (isInfixOf "ring-solving" (p_path p)) $ pure $ unsafePerformIO $ writeFile "/tmp/pandoc-out" $ show $ res
   pure $ p
     { p_path = f $ p_path p
     , p_contents = res
     }
+
+onHead :: [a] -> (a -> a) -> [a]
+onHead [] _ = []
+onHead (a : as) faa = faa a : as
 
 replaceInline :: (Text -> Text) -> Inline -> Inline
 replaceInline f (Link attrs txt (url, tg))

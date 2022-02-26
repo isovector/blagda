@@ -13,7 +13,6 @@ import           Blagda.Utils
 import           Control.Monad.IO.Class
 import           Control.Monad.Writer
 import           Data.Aeson
-import           Data.Foldable
 import           Data.List
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes)
@@ -29,7 +28,6 @@ import           GHC.Generics (Generic)
 import qualified System.Directory as Dir
 import           Text.HTML.TagSoup
 import           Text.Pandoc (Meta (Meta))
-import Debug.Trace (trace)
 
 parseHeader :: Meta -> Maybe Article
 parseHeader (Meta m) =
@@ -82,10 +80,7 @@ main =
     liftIO $ Dir.copyFile html $ getHtml1Path html
 
   let renamed_articles = rename doMyRename $ raw_articles <> raw_md
-  liftIO $ traverse_ (putStrLn . p_path) renamed_articles
-
   articles <- forP renamed_articles $ renderPost fileIdents defaultWriterOptions
-
 
   writeTemplate "template.html" articles
 
@@ -111,15 +106,11 @@ main =
   void $ forP statics $ \filepath ->
     copyFileChanged ("support/static" </> filepath) ("_build/html" </> filepath)
 
-traceOf :: Show b => (a -> b) -> a -> a
-traceOf f a = trace (show $ f a) a
-
 
 doMyRename :: FilePath -> FilePath
 doMyRename s
-  | isPrefixOf "Blog/20" s = "blog" </> drop (length @[] "Blog/2000-00-00-") s
-  | isPrefixOf "Blog" s = "blog" </> drop 5 s
-  | isPrefixOf "html0/Blog" s = "blog" </> drop (length @[] "html0/Blog.") s
+  | isPrefixOf "Blog/20" s = dropExtension ("blog" </> drop (length @[] "Blog/2000-00-00-") s) </> "index.html"
+  | isPrefixOf "Blog" s = dropExtension ("blog" </> drop 5 s) </> "index.html"
   | otherwise = s
 
 
