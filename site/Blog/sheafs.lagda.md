@@ -1,9 +1,9 @@
 ---
 layout: post
 title: "Review: A Very Elementary Introduction to Sheaves"
-date: 2022-02-20 12:33
+date: TO_BE_DETERMINED
 comments: true
-tags: kidney, ring solving, agda, review
+tags: agrios, sheaves, math, reverse engineering, agda
 ---
 
 ```
@@ -13,7 +13,7 @@ module Blog.sheafs where
 
 open import Data.Integer hiding (_<_)
 open import Data.Integer.Properties using (*-zeroˡ; ≤-reflexive; ≤-trans)
-open import Data.Vec hiding (restrict)
+open import Data.Vec hiding (restrict; reverse)
 open import Categories
 open import Category.LIN
 open import Category.SET
@@ -22,7 +22,6 @@ open import Category.MyFunctor
 import Relation.Binary.PropositionalEquality as Eq
 
 open Eq using (_≡_; cong; sym; refl)
-open Eq.≡-Reasoning
 open LinMap
 ```
 
@@ -177,12 +176,6 @@ module Sheaf (pre : Preorder) (C : Category) where
     field
       Stalk : Carrier → Obj
       restrict : {x y : Carrier} → x < y → Stalk y ~> Stalk x
-      restrict-trans
-          : {x y z : Carrier}
-          → (xy : x < y)
-          → (yz : y < z)
-          → restrict (<-trans xy yz) ≈ restrict xy ∘ restrict yz
-      -- also restrict is composable?
 ```
 
 which seems reasonable. The paper now gives us a specific sheaf, with
@@ -253,11 +246,6 @@ Thus, we can finally build the example `Sheaf`:
   ex .restrict e12<v1 = e12~>v1
   ex .restrict e12<v2 = e12~>v2
   ex .restrict (ex<-refl z) = id
-  ex .restrict-trans e12<v1 (ex<-refl .v1) v = Eq.refl
-  ex .restrict-trans e12<v2 (ex<-refl .v2) v = Eq.refl
-  ex .restrict-trans (ex<-refl _) e12<v1 v = Eq.refl
-  ex .restrict-trans (ex<-refl _) e12<v2 v = Eq.refl
-  ex .restrict-trans (ex<-refl _) (ex<-refl _) v = Eq.refl
 ```
 
 What's with the `Stalk`{.Agda} of `v1`{.Agda} being 2, you might ask? Remember,
@@ -401,6 +389,7 @@ out of `terminal`{.Agda}:
       (+ 0 * x) ∷ []               ≡⟨ cong (_∷ []) (*-zeroˡ +0) ⟩
       +0 ∷ []
     ∎
+    where open Eq.≡-Reasoning
 ```
 
 So, that's no good. We've modeled `Section`{.Agda} incorrectly, as the
@@ -511,144 +500,190 @@ $$
 $$
 
 
-
 ## Example: Continuous Intervals
 
 The paper presents a second example as well. Maybe it's just that I'm less
 well-versed in the subject matter, but this example feels significantly more
-incoherent than the first. The idea here is to use sections of the real line as
-our preorder. That is, given $u, v : \mathbb{R} \times \mathbb{R}$, we have $u
-\leq v$ iff $v_1 \leq u_1$ and $u_2 \leq v_2$ --- that is, if $u$ is entirely
-contained by $v$. In code, we have intervals:
+incoherent than the first. I tried to work through it, and the formalization
+above was sufficiently powerful to do what I needed, but I didn't understand the
+example or what it was trying to accomplish. There was some Abelian group stuff
+that never actually got used.
 
+Rather than clean this section up, I'm instead going to spend the time before my
+publication deadline writing about what I learned about pre-sheafs after hitting
+the wall, and asking for help.
+
+
+## Extracuricular Presheafs
+
+So let's talk about what all of this sheaf business above is trying to do. The
+ever helpful Reed Mullanix came to my rescue with a few helpful intuitions. To
+paraphrase him (if there are any mistakes in the following, they are my
+mistakes, not his):
+
+> Think about a sensor network. You have some physical space, with a series of
+> sensors attached in specific places. Maybe you have a microphone in the
+> hallway, and a camera at the front door, and a thermometer in the bedroom.
+> Each of these sensors is _locally correct_, that is, we can be reasonably sure
+> that if the thermometer says 37C, it is in fact 37C.
+>
+> A presheaf is a mapping from this collection of sensors to a world in which
+> we can reason about the total space. For example, we might want to get an idea
+> of what's going on in the basement, where we have no sensors, but which is
+> part of our house nevertheless.
+>
+> And a global section over that presheaf is a globally consistent take on the
+> system. It's some mapping into the hypothesis space that _agrees with all of
+> the measurements._ If we know it's 37C in the bedroom, we're probably not
+> going to see snow in the front-door camera.
+
+Okay, so what's all this preorder stuff about? I think it's actually just a poor
+man's category. We can lift any preorder into a category by considering the `<`
+relationship to be a morphism:
 
 ```
-infix 3 [_,_]
-record Interval : Set where
-  constructor [_,_]
-  field
-    start : ℤ
-    end : ℤ
+module PreorderToCategory (P : Preorder) where
+  open Preorder P
+  open Category
+
+  open import Data.Unit using (⊤; tt)
+
+  cat : Category
+  cat .Obj = Carrier
+  cat ._~>_ = _<_
+  cat ._≈_ f g = ⊤
+  cat .≈-equiv = sorry
+  cat .id {A = A} = <-refl A
+  cat ._∘_ g f = <-trans f g
+  cat .∘-cong = λ _ _ → tt
+  cat .id-r f = tt
+  cat .id-l f = tt
+  cat .∘-assoc h g f = tt
 ```
 
-<!--
+and now that we have a `Category`{.Agda}, we can avoid the whole `Sheaf`{.Agda}
+/ `GlobalSection`{.Agda} by giving a functor into `SET`{.Agda}. Well, almost,
+because `restrict`{.Agda} goes the opposite direction. So instead, we can build
+an opposite category:
+
 ```
-open Interval
+module Op (C : Category) where
+  open Category
 
-open Data.Integer using () renaming (_≤_ to _≤Z_)
+  data OpArr : Obj C → Obj C → Set where
+    reverse : {X Y : Obj C} → C [ X , Y ] → OpArr Y X
 
+  op : Category
+  op .Obj = C .Obj
+  op ._~>_ = OpArr
+  op ._≈_ (reverse f) (reverse g) = C ._≈_ f g
+  op .≈-equiv {A} {B} = sorry
+  op .id = reverse (C .id)
+  op ._∘_ (reverse g) (reverse f) = reverse (C ._∘_ f g)
+  op .∘-cong = sorry
+  op .id-r (reverse f) = C .id-l f
+  op .id-l (reverse f) = C .id-r f
+  op .∘-assoc (reverse h) (reverse g) (reverse f) =
+    setoid C .isEquivalence .S.IsEquivalence.sym (C .∘-assoc f g h)
+    where
+      open import Relation.Binary.Bundles using (Setoid)
+      open Setoid using (isEquivalence)
+      import Relation.Binary.Structures as S
+```
+
+Now, we can express a presheaf as a functor:
+
+```
 module _ where
-  open Preorder
-```
--->
+  open import Category.MyFunctor
+  open Op
 
-and a `Preorder`{.Agda} over them:
-
-```
-  data IntervalArr : Interval → Interval → Set where
-    is-smaller
-        : (small big : Interval)
-        → big .start ≤ small .start
-        → small .end ≤ big .end
-        → IntervalArr small big
-
-  int-preorder : Preorder
-  int-preorder .Carrier = Interval
-  int-preorder ._<_  = IntervalArr
-  int-preorder .<-refl a =
-    is-smaller a a (≤-reflexive refl) (≤-reflexive refl)
-  int-preorder .<-trans (is-smaller a b bas bae)
-                        (is-smaller .b c cbs cbe) =
-     is-smaller a c (≤-trans cbs bas) (≤-trans bae cbe)
+  Presheaf : Category → Set
+  Presheaf C = op C => SET
 ```
 
-<!--
-```
-  open import Algebra.Bundles
-  open import Algebra.Structures
-  open AbelianGroup hiding (refl)
-```
--->
-
-The paper now constructs a sheaf over `AGRP`{.Agda} (the category of Abelian
-groups, though it omits the category theory stuff), using `int-preorder`{.Agda}
-as the preorder. The Abelian group in particular we're going to map to is
-endomorphisms over `ℤ`{.Agda}, using integer addition as the group operation,
-and elements are combined pointwise.
-
-But *why* are we doing this? It's unclear. Nothing seems to depend on this
-Abelian group structure. This section seems to be about finding globally
-continuous functions, or something? I'm actually completely unsure what is
-supposed to be going on here. But I guess we can power on nevertheless. Lets
-build the `Stalk`{.Agda} of our sheaf:
+or our specific example from earlier:
 
 ```
-  open Sheaf int-preorder AGRP
-  open Sheaf.Sheaf
-
-  int : Sheaf
-  int .Stalk x .Carrier = ℤ → ℤ
-  int .Stalk x ._≈_ f g = forall a → f a ≡ g a
-  int .Stalk x ._∙_ f g z = f z + g z
-  int .Stalk x .ε _ = + 0
-  (int .Stalk x ⁻¹) f z = - f z
-  int .Stalk x .isAbelianGroup = sorry
-```
-
-Restriction is given by literally restricting the function to be inside the
-interval. Which we could do, but would be sorta annoying, and I don't think it
-actually buys us anything. For now we'll just map the functions to themselves,
-and pretend like they've been restricted.
-
-```
-  int .restrict x .AGrpArr.map f a = f a
-  int .restrict x .AGrpArr.preserves-∙ f g a = refl
-  int .restrict x .AGrpArr.preserves-ε a = refl
-  int .restrict x .AGrpArr.preserves-inv f a = refl
-  int .restrict x .AGrpArr.preserves-≈ f g eq = eq
-  int .restrict-trans (is-smaller _ _ x x₁) yz f a = refl
-```
-
-Lovely. What's our resetriction function here
-
-```
+module _ where
+  open PreorderToCategory ex-preorder
   open _=>_
+  open import Data.Nat using (ℕ)
+  open Op
 
-  func : AGRP => SET
-  func .F-Obj = Carrier
-  func .F-map f a = f .AGrpArr.map a
-  func .F-map-id A a = refl
-  func .F-map-∘ g f a = refl
+  Z : ℕ → Set
+  Z = Vec ℤ
 
-  open Sections func int
-
-  open GlobalSection
-  open import Data.Bool using (if_then_else_; true; false)
-  open import Relation.Nullary using (_because_)
-
---   good : GlobalSection
---   good .section c x = x
---   good .commutes x<y = refl
-
-  discontinuous : ℤ -> ℤ
-  discontinuous (+_ n) = + 1
-  discontinuous (-[1+_] n) = + 0
-
---   bad : GlobalSection
---   bad .section c = discontinuous
---   bad .commutes x<y = refl
-
---   no-discont : (Σ GlobalSection (\x -> x .sectiodn))
---   no-discont = ?
-
+  ex' : Presheaf cat
+  ex' .F-Obj v1 = Z 2
+  ex' .F-Obj v2 = Z 3
+  ex' .F-Obj e12 = Z 2
+  ex' .F-map (reverse e12<v1) = e12~>v1 .linmap
+  ex' .F-map (reverse e12<v2) = e12~>v2 .linmap
+  ex' .F-map (reverse (ex<-refl _)) a = a
+  ex' .F-map-id A a = refl
+  ex' .F-map-∘ (reverse e12<v1) (reverse (ex<-refl _)) a = refl
+  ex' .F-map-∘ (reverse e12<v2) (reverse (ex<-refl _)) a = refl
+  ex' .F-map-∘ (reverse (ex<-refl _)) (reverse e12<v1) a = refl
+  ex' .F-map-∘ (reverse (ex<-refl _)) (reverse e12<v2) a = refl
+  ex' .F-map-∘ (reverse (ex<-refl _)) (reverse (ex<-refl _)) a = refl
 ```
 
-Giving up after defining a discontinuous function.
+which leaves only the question of what a `GlobalSection` is under this
+representation.
 
 
+I got stumped on this one for a while too, but again, Reed to
+the rescue, who points out that in our preorder, `<` corresponds to a "smaller"
+space. Thus, we want to find a mapping out of the biggest space, which
+corresponds to a top element in the order, or a terminal object in the category.
+The terminal object is going to be the "total space" in consideration (in our
+sensor example, eg.) and the functor laws will ensure consistency.
 
-## Conclusion
+```
+GlobalSection
+    : {C : Category}
+    → (pre : Presheaf C)
+    → (t : HasTerminal C)
+    → Set
+GlobalSection pre t =
+  pre ._=>_.F-Obj (t .HasTerminal.terminal)
+```
 
-There are two different sorts of presheaves! Categorical ones, and topological ones!
+Unfortunately, this is a problem for our worked example --- we don't *have* a
+terminal object! But that's OK, it's easy to trivially construct one by just
+adding a top:
 
+~~~{.quiver}
+\[\begin{tikzcd}
+  & terminal \\
+  v1 && v2 \\
+  & e12
+  \arrow[from=3-2, to=2-1]
+  \arrow[from=3-2, to=2-3]
+  \arrow[from=2-3, to=1-2]
+  \arrow[from=2-1, to=1-2]
+\end{tikzcd}\]
+~~~
+
+and by picking an object in `SET`{.Agda} to map it to for our presheaf. There
+are some interesting choices here; we could just pick `⊤`{.Agda}, which is
+interesting in how boring a choice it is. Such a thing trivially satisfies all
+of the requirements, but it doesn't tell us much about the world. This is the
+metaphorical equivalent of explaining our sensors' readings as "anything is
+possible!"
+
+More interestingly, we could pick `F-Obj terminal` to be `ℤ2 × ℤ3 × ℤ2`,
+corresponding to the product of `F-Obj v1`, `F-Obj v2` and `F-Obj e12`. We can
+satisfy the functor laws by projecting from the `F-Obj term` down to one of its
+components. And, best of all, it gives us a place to stick the values from our
+worked example.
+
+I'd love to code this up in more detail, but unfortunately I'm out of time.
+That's the flaw of trying to get through one paper a week, the deadline is
+strict whether you're ready for it or not.
+
+This whole post is a literate Agda file. I'm currently in the process of writing
+an Agda blogging backend for the site, so hopefully if you come back in a week
+or so, everything here should be hyperlinked and interactive.
 
