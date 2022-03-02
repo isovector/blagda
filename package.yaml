@@ -2,17 +2,16 @@ name:                blagda
 version:             0.1.0.0
 github:              "isovector/blagda"
 license:             AGPL-3
-author:              "Amélia"
+author:              "Amélia Liao"
 maintainer:          "sandy@sandymaguire.me"
-copyright:           "Amélia"
+copyright:           "Amélia Liao, Sandy Maguire"
 
 extra-source-files:
 - README.md
 - ChangeLog.md
 
-# Metadata used when publishing your package
-# synopsis:            Short description of your package
-# category:            Web
+synopsis:            Shake frontend for Agda blogging
+category:            Blog
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is

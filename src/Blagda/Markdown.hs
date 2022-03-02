@@ -10,6 +10,7 @@ import           Blagda.Agda
 import           Blagda.Equations (hideSteps)
 import           Blagda.Latex
 import           Blagda.References (linkDocument)
+import           Blagda.Types
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy as LazyBS
 import           Data.Digest.Pure.SHA
@@ -27,7 +28,6 @@ import qualified System.Directory as Dir
 import           Text.HTML.TagSoup
 import           Text.Pandoc
 import           Text.Pandoc.Walk
-import Blagda.Types
 
 
 data Reference = Reference

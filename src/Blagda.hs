@@ -34,9 +34,9 @@ parseFileTypes () = do
     tcAndLoadPublicNames "_build/all-pages.agda"
 
 
-agdaHTML :: Action [FilePath]
-agdaHTML = do
-  agda_files <- sort <$> getDirectoryFiles "site" ["**/*.agda", "**/*.lagda.md"]
+agdaHTML :: FilePath -> Action [FilePath]
+agdaHTML dir = do
+  agda_files <- sort <$> getDirectoryFiles dir ["**/*.agda", "**/*.lagda.md"]
 
   let
     toOut x | takeExtensions x == ".lagda.md"

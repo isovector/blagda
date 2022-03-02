@@ -6,12 +6,14 @@ cabal-version: 1.12
 
 name:           blagda
 version:        0.1.0.0
+synopsis:       Shake frontend for Agda blogging
 description:    Please see the README on GitHub at <https://github.com/isovector/blagda#readme>
+category:       Blog
 homepage:       https://github.com/isovector/blagda#readme
 bug-reports:    https://github.com/isovector/blagda/issues
-author:         Amélia
+author:         Amélia Liao
 maintainer:     sandy@sandymaguire.me
-copyright:      Amélia
+copyright:      Amélia Liao, Sandy Maguire
 license:        AGPL-3
 license-file:   LICENSE
 build-type:     Simple
