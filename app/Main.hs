@@ -55,7 +55,7 @@ main =
       }) $ do
 
 
-  agda_files <- agdaHTML
+  agda_files <- agdaHTML "site"
   fileIdents <- liftIO $ newCacheIO parseFileIdents
   fileTypes <- liftIO $ newCacheIO parseFileTypes
 
