@@ -1,18 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+
 module Blagda.References where
 
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
-import           Data.List
 import           Data.Maybe
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           System.Environment
-import           System.Exit
 import           Text.HTML.TagSoup
 import           Text.Pandoc.Definition
-import           Text.Pandoc.JSON
 import           Text.Pandoc.Walk
 
 
@@ -70,14 +68,14 @@ parseSymbolRefs = go mempty . concat . mapMaybe getHTML where
   go map (TagOpen a meta:TagText t:TagClose a':xs)
     | a == "a"
     , a' == a
-    , Just id <- lookup "id" meta
+    -- , Just id <- lookup "id" meta
     , Just cls <- lookup "class" meta
     , Just href <- lookup "href" meta
     = go (addIfNotPresent t (Reference href cls) map) xs
     | otherwise = go map xs
-    where
-      tags = [ TagOpen "span" [("class", "Agda")], TagOpen "a" meta', TagText t, TagClose "a", TagClose "span" ]
-      meta' = filter ((/= "id") . fst) meta
+    -- where
+    --   tags = [ TagOpen "span" [("class", "Agda")], TagOpen "a" meta', TagText t, TagClose "a", TagClose "span" ]
+    --   meta' = filter ((/= "id") . fst) meta
   go map (_:xs) = go map xs
   go map [] = map
 

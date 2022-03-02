@@ -2,13 +2,14 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+
 module Blagda.Markdown where
 
 import           Blagda.Agda
 import           Blagda.Equations (hideSteps)
 import           Blagda.Latex
 import           Blagda.References (linkDocument)
-import           Control.Monad.Error.Class
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy as LazyBS
 import           Data.Digest.Pure.SHA

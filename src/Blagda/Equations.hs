@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+
 module Blagda.Equations where
 
 import           Data.Maybe
@@ -9,7 +11,7 @@ import           Text.HTML.TagSoup
 
 
 hideSteps :: Bool -> [Tag Text] -> [Tag Text]
-hideSteps has_eqn (to@(TagOpen "a" attrs):tt@(TagText t):tc@(TagClose "a"):rest)
+hideSteps _ (to@(TagOpen "a" attrs):tt@(TagText t):tc@(TagClose "a"):rest)
   | Text.length t >= 1, Text.last t == '⟨', Just href <- lookup "href" attrs
   = [ TagOpen "span" [("class", "reasoning-step")]
     , TagOpen "span" [("class", "as-written " <> fromMaybe "" (lookup "class" attrs))]
