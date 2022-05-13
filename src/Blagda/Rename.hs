@@ -17,8 +17,13 @@ import           Text.Pandoc.Walk (walk)
 rename :: (FilePath -> FilePath) -> [Post Pandoc a] -> [Post Pandoc a]
 rename f posts = do
   let rn fp =
-        let segs = T.split (flip elem ['?', '#']) fp
-         in T.intercalate "#" $ onHead segs $ T.pack . f . T.unpack
+        case T.isInfixOf "?" "segs" of
+          True ->
+            let segs = T.splitOn "?" fp
+            in T.intercalate "?" $ onHead segs $ T.pack . f . T.unpack
+          False ->
+            let segs = T.splitOn "#" fp
+            in T.intercalate "#" $ onHead segs $ T.pack . f . T.unpack
   p <- posts
   let res = walk (replaceBlock rn) $ walk (replaceInline rn) $ p_contents p
   pure $ p
